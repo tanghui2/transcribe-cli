@@ -3,9 +3,9 @@
 > 本地音视频转写 · 摘要 · 翻译 · 字幕生成
 > **全程离线，零 API 成本，素材不离开你的设备。**
 
-[![CI](https://github.com/tanghui2/transcribe-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/tanghui2/transcribe-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Release](https://img.shields.io/github/v/release/tanghui2/transcribe-cli)](https://github.com/tanghui2/transcribe-cli/releases)
 
 把任意音视频文件丢进去，出来一套可直接使用的字幕、纪要和译文。
 
@@ -16,6 +16,8 @@ python -m transcribe_cli 课程录像.mp4 --language zh --summarize --translate 
 **175 分钟中文课程视频 → 27 分钟跑完全流程（6.4 倍实时）**，产出 SRT / VTT / TXT / JSON / 中文纪要 / 英文译文共 6 份文件；加 `--bilingual-srt` 则第 7 份（时间轴对齐的双语字幕）一并产出。
 
 📖 **[部署指南](DEPLOY.md)** · 🧾 [项目介绍](项目介绍.md) · 📝 [多场合文案](介绍文案-多场合.md)
+
+> **Windows 用户可直接下载**：[Releases](https://github.com/tanghui2/transcribe-cli/releases) 里有打包好的单文件 exe（93 MB，含 CUDA 支持），无需安装 Python。模型需另行下载（约 3 GB）。
 
 ---
 
