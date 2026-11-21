@@ -27,3 +27,7 @@ models/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 内部操作说明（含授权步骤），不入公开仓库
+发布清单.md
+需要你授权.md
