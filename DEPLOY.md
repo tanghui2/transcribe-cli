@@ -288,7 +288,35 @@ docker run --gpus all -p 8000:8000 -v /path/to/models:/models transcribe-cli
 
 ## 持续集成
 
-`.github/workflows/ci.yml` 已包含：
+CI 配置在 **`ci_template/ci.yml`**，内容与标准 `.github/workflows/ci.yml` 完全一致。
+
+**为什么放在 `ci_template/` 而不是 `.github/workflows/`：**
+GitHub 要求修改 workflow 文件的凭证必须带 `workflow` scope。若 token 只有
+`public_repo`，两条路径都会被拒——`git push` 报
+`refusing to allow a Personal Access Token to create or update workflow`，
+REST API 返 404。所以先用普通路径提交模板，再由你手动启用。
+
+### 启用方式（二选一）
+
+**方式 A：网页端粘贴（最简单）**
+
+1. 打开 https://github.com/tanghui2/transcribe-cli/new/main
+2. 文件名填 `.github/workflows/ci.yml`
+3. 内容复制 `ci_template/ci.yml` 的全部内容
+4. 右下角勾选 **"Commit directly to the main branch"**（不要建分支）
+5. 点 Commit changes
+
+**方式 B：换带 workflow scope 的 token**
+
+生成 classic token 时额外勾选 `workflow`，然后本地推送：
+
+```bash
+git add .github/workflows/ci.yml
+git commit -m "CI：启用 CI 配置"
+git push origin main
+```
+
+### CI 包含内容
 
 - **多版本测试**：Python 3.11 / 3.12 / 3.13
 - **语法检查**：`python -m compileall -q transcribe_cli`
