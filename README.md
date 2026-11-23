@@ -130,8 +130,6 @@ python -m transcribe_cli --check -v
 
 界面采用「状态带驱动」布局：顶部一条贯穿全宽的深色横带，既是五阶段导航（解码 → 识别 → 纪要 → 翻译 → 导出）也是整体进度条；下方左右分栏，左边是文件队列与参数，右边是五个结果视图。
 
-![desktop](desktop/screenshot.png)
-
 ### 下载运行
 
 去 [Releases](https://github.com/tanghui2/transcribe-cli/releases) 下载 `transcribe-cli-0.1.0-windows-x64.exe`（169 MB，单文件 portable 版），双击即用。
