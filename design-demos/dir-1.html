@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>transcribe-cli 桌面版 · 方向一</title>
+<style>
+  :root{
+    --ink:#16181C;
+    --ink-2:#5A5F6A;
+    --ink-3:#6E7480;
+    --line:#DFE2E8;
+    --line-2:#EDF0F4;
+    --bg:#F4F5F7;
+    --surface:#FFFFFF;
+    --stage:#2B3038;
+    --stage-2:#3A414C;
+    --accent:#E8622D;
+    --accent-soft:#FDF0EA;
+    --done:#1D8A5F;
+    --mono:"SF Mono",ui-monospace,"Cascadia Mono","JetBrains Mono",Consolas,monospace;
+    --sans:"Inter","PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:var(--sans);
+    background:#DDE0E5;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    padding:28px;
+    display:flex;flex-direction:column;align-items:center;gap:22px;
+  }
+  .caption{max-width:1440px;width:100%;display:flex;justify-content:space-between;align-items:baseline}
+  .caption h2{font-size:15px;font-weight:500;letter-spacing:.02em}
+  .caption p{font-size:12px;color:#6B7280}
+
+  /* 窗口外壳 */
+  .win{
+    width:1440px;height:900px;background:var(--surface);
+    border-radius:10px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(16,24,40,.10),0 18px 44px rgba(16,24,40,.20);
+    display:flex;flex-direction:column;
+  }
+  /* 标题栏 */
+  .titlebar{
+    height:40px;flex:0 0 40px;background:#FAFBFC;
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;padding:0 14px;gap:12px;
+  }
+  .dots{display:flex;gap:7px}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .dot.r{background:#F0655A}.dot.y{background:#F5BE4F}.dot.g{background:#61C454}
+  .title{font-size:12.5px;color:var(--ink-2);font-weight:500}
+  .titlebar .spacer{flex:1}
+  .titlebar .meta{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+
+  /* 状态带：这一版的骨架主角 */
+  .stage{
+    flex:0 0 96px;display:flex;align-items:stretch;
+    background:var(--stage);color:#fff;position:relative;
+  }
+  .stage-fill{
+    position:absolute;left:0;top:0;bottom:0;width:64%;
+    background:linear-gradient(90deg,#E8622D,#F0814F);opacity:.95;
+  }
+  .stage-grid{position:absolute;inset:0;display:flex}
+  .stage-cell{
+    flex:1;display:flex;flex-direction:column;justify-content:center;
+    padding:0 18px;position:relative;
+  }
+  .stage-cell+.stage-cell{border-left:1px solid rgba(255,255,255,.10)}
+  .stage-cell .n{font-family:var(--mono);font-size:12px;letter-spacing:.10em;opacity:.85;color:#C8CDD6}
+  .stage-cell .t{font-size:14px;font-weight:500;margin-top:5px;color:#EDEFF3}
+  .stage-cell .s{font-family:var(--mono);font-size:12px;opacity:.9;color:#AEB5C0;margin-top:3px}
+  .stage-cell.done .t{color:#8FE3BC}
+  .stage-cell.now .t{color:#fff}
+  .stage-cell.now .n::after{
+    content:"";display:inline-block;width:5px;height:5px;border-radius:50%;
+    background:#fff;margin-left:7px;vertical-align:middle;
+    animation:blink 1.4s ease-in-out infinite;
+  }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+
+  /* 波形导航条：段落块即字幕段，可点 */
+  .wavebar{
+    flex:0 0 92px;border-bottom:1px solid var(--line);background:#FBFBFC;
+    padding:14px 20px 10px;display:flex;flex-direction:column;gap:7px;
+  }
+  .wavebars{display:block;height:56px;width:100%}
+  .wavebars svg{display:block;width:100%;height:56px}
+  .wavebars rect{shape-rendering:crispEdges}
+  .whead{display:flex;align-items:center;font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+  .whead .spacer{flex:1}
+
+  /* 主体 */
+  .body{display:flex;flex:1;min-height:0}
+
+  /* 左：文件与参数 */
+  .left{
+    width:392px;flex:0 0 392px;border-right:1px solid var(--line);
+    display:flex;flex-direction:column;background:#FCFCFD;
+  }
+  .pane-h{
+    height:38px;flex:0 0 38px;display:flex;align-items:center;gap:8px;
+    padding:0 16px;border-bottom:1px solid var(--line-2);
+    font-size:12px;font-weight:500;letter-spacing:.06em;color:var(--ink-2);
+  }
+  .pane-h .count{
+    font-family:var(--mono);font-size:12px;color:var(--ink-3);
+    background:var(--line-2);padding:2px 6px;border-radius:3px;letter-spacing:0;
+  }
+
+  /* 拖放区 */
+  .drop{
+    margin:14px 16px 10px;padding:22px 16px;border:1.5px dashed #C6CBD4;
+    border-radius:8px;text-align:center;background:#fff;
+  }
+  .drop .big{font-size:13px;font-weight:500;color:var(--ink)}
+  .drop .small{font-size:13px;color:var(--ink-2);margin-top:5px;line-height:1.6}
+  .drop .btn{
+    margin-top:11px;display:inline-block;padding:7px 15px;border-radius:5px;
+    background:var(--ink);color:#fff;font-size:13px;font-weight:500;
+  }
+
+  /* 任务队列 */
+  .queue{flex:1;min-height:0;overflow:auto;padding:0 16px 8px}
+  .qrow{
+    display:grid;grid-template-columns:1fr 78px;gap:8px;align-items:center;
+    padding:9px 10px;border:1px solid var(--line);border-radius:6px;
+    background:#fff;margin-bottom:6px;
+  }
+  .qrow.act{border-color:var(--accent);background:var(--accent-soft)}
+  .qname{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qsub{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin-top:3px}
+  .qst{font-family:var(--mono);font-size:12px;text-align:right;color:var(--ink-2)}
+  .qst.run{color:var(--accent)}
+  .qst.ok{color:var(--done)}
+
+  /* 参数区 */
+  .params{border-top:1px solid var(--line);padding:12px 16px 14px;background:#fff}
+  .prow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .prow:last-child{margin-bottom:0}
+  .plabel{font-size:13px;color:var(--ink-2);white-space:nowrap}
+  .pval{
+    font-family:var(--mono);font-size:13px;color:var(--ink);
+    border:1px solid var(--line);border-radius:4px;padding:4px 8px;
+    background:#fff;display:flex;align-items:center;gap:6px;min-width:132px;justify-content:space-between;
+  }
+  .pval .car{color:var(--ink-2);font-size:11px}
+  .chips{display:flex;gap:4px;flex-wrap:wrap}
+  .chip{
+    font-family:var(--mono);font-size:12px;padding:3px 7px;border-radius:4px;
+    border:1px solid var(--line);color:var(--ink-2);background:#fff;
+  }
+  .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .toggles{display:flex;gap:12px}
+  .tg{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);cursor:pointer}
+  .tg i{
+    width:26px;height:15px;border-radius:8px;background:#D6DAE1;position:relative;display:block;
+  }
+  .tg i::after{
+    content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;
+    background:#fff;transition:.16s;
+  }
+  .tg.on i{background:var(--done)}
+  .tg.on i::after{left:13px}
+
+  .runbar{
+    flex:0 0 auto;padding:12px 16px;border-top:1px solid var(--line);background:#fff;
+    display:flex;gap:8px;align-items:center;
+  }
+  .btn-main{
+    flex:1;height:34px;border-radius:6px;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:12.5px;font-weight:500;gap:7px;
+  }
+  .btn-sec{
+    height:34px;padding:0 13px;border-radius:6px;border:1px solid var(--line);
+    display:flex;align-items:center;font-size:13px;color:var(--ink-2);background:#fff;
+  }
+
+  /* 右：结果 */
+  .right{flex:1;min-width:0;display:flex;flex-direction:column}
+  .tabs{
+    height:38px;flex:0 0 38px;border-bottom:1px solid var(--line);
+    display:flex;align-items:stretch;padding:0 18px;gap:22px;background:#fff;
+  }
+  .tab{
+    display:flex;align-items:center;font-size:14px;color:var(--ink-3);
+    border-bottom:2px solid transparent;cursor:pointer;
+  }
+  .tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:500}
+  .tab .n{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-left:5px}
+
+  .result{flex:1;min-height:0;overflow:auto;padding:16px 20px 20px}
+
+  /* 视图：转写 */
+  .seg{
+    display:grid;grid-template-columns:76px 1fr;gap:14px;
+    padding:8px 10px;border-radius:5px;align-items:start;
+  }
+  .seg+.seg{margin-top:1px}
+  .seg:hover{background:#F7F8FA}
+  .seg.act{background:var(--accent-soft)}
+  .seg .tm{font-family:var(--mono);font-size:12px;color:var(--ink-3);padding-top:2px}
+  .seg .tx{font-size:15px;line-height:1.7}
+  .seg .en{font-size:14px;color:var(--ink-2);margin-top:4px;line-height:1.6}
+
+  /* 视图：摘要 */
+  .summary{padding:4px 6px;max-width:760px}
+  .summary h3{font-size:14px;font-weight:500;color:var(--ink-2);margin:16px 0 9px;letter-spacing:.04em}
+  .summary h3:first-child{margin-top:0}
+  .summary p{font-size:15px;line-height:1.8;color:var(--ink)}
+  .summary ol{margin:0;padding-left:20px}
+  .summary li{font-size:14.5px;line-height:1.85;color:var(--ink-2);margin-bottom:3px}
+  .summary li b{color:var(--ink);font-weight:500}
+
+  /* 视图：字幕 */
+  .sub{font-family:var(--mono);font-size:11.5px;line-height:1.85;color:var(--ink-2)}
+  .sub .idx{color:var(--ink-3);display:inline-block;width:26px}
+  .sub .time{color:var(--accent)}
+  .sub .zh{color:var(--ink)}
+  .sub .en{color:var(--ink-2);padding-left:26px;display:block}
+
+  /* 视图：设置 */
+  .setgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 26px;max-width:720px}
+  .set{
+    border:1px solid var(--line);border-radius:6px;padding:11px 13px;background:#fff;
+  }
+  .set .k{font-size:11.5px;color:var(--ink-2)}
+  .set .v{font-family:var(--mono);font-size:12px;margin-top:5px;color:var(--ink)}
+  .set .ok{color:var(--done)}
+  .set .bad{color:#C0392B}
+
+
+  /* 自检：数据表而非卡片墙 */
+  .chk{max-width:680px}
+  .chk-h{
+    display:grid;grid-template-columns:1fr 200px 90px;gap:14px;
+    padding:14px 12px 7px;font-size:12px;letter-spacing:.10em;color:var(--ink-3);
+    border-bottom:1px solid var(--line);
+  }
+  .chk-h:first-child{padding-top:0}
+  .chk-r{
+    display:grid;grid-template-columns:1fr 200px 90px;gap:14px;
+    padding:8px 12px;border-bottom:1px solid var(--line-2);align-items:baseline;
+  }
+  .chk-r .k{font-size:14px;color:var(--ink-2)}
+  .chk-r .v{font-family:var(--mono);font-size:13px;color:var(--ink)}
+  .chk-r .s{font-size:13px;text-align:right}
+  .chk-r .s.ok{color:var(--done)}
+
+  /* 状态栏 */
+  .statusbar{
+    flex:0 0 32px;height:32px;background:#FAFBFC;border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:16px;padding:0 16px;
+    font-family:var(--mono);font-size:12px;color:var(--ink-2);
+  }
+  .statusbar .spacer{flex:1}
+  .statusbar b{color:var(--ink-2);font-weight:500}
+  .led{width:6px;height:6px;border-radius:50%;background:var(--done);display:inline-block;margin-right:5px}
+</style>
+</head>
+<body>
+
+<div class="caption">
+  <h2>方向一 · 状态带驱动（Bierut 思维）</h2>
+  <p>骨架：顶部状态带（贯穿全宽的阶段导航，同时是进度条）＋ 下方左右分栏｜accent 是状态指示器，占比远大于 Buzz</p>
+</div>
+
+<div class="win">
+  <!-- 标题栏 -->
+  <div class="titlebar">
+    <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+    <span class="title">transcribe-cli — 开学典礼.mp4</span>
+    <span class="spacer"></span>
+    <span class="meta">本地推理 · 无网络请求</span>
+  </div>
+
+  <!-- 状态带 -->
+  <div class="stage">
+    <div class="stage-fill"></div>
+    <div class="stage-grid">
+      <div class="stage-cell done">
+        <div class="n">01 解码</div>
+        <div class="t">音频提取</div>
+        <div class="s">16kHz 单声道 · 226 MB</div>
+      </div>
+      <div class="stage-cell now">
+        <div class="n">02 识别</div>
+        <div class="t">语音转写</div>
+        <div class="s">large-v3 · cuda float16</div>
+      </div>
+      <div class="stage-cell">
+        <div class="n">03 纪要</div>
+        <div class="t">要点提炼</div>
+        <div class="s">qwen3:8b · 本地</div>
+      </div>
+      <div class="stage-cell">
+        <div class="n">04 翻译</div>
+        <div class="t">逐段对齐</div>
+        <div class="s">待执行</div>
+      </div>
+      <div class="stage-cell">
+        <div class="n">05 导出</div>
+        <div class="t">写入文件</div>
+        <div class="s">6 种格式</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主体 -->
+  <div class="body">
+    <!-- 左栏 -->
+    <div class="left">
+      <div class="pane-h">文件<span class="count">3</span></div>
+
+      <div class="drop">
+        <div class="big">拖入音视频文件</div>
+        <div class="small">支持 mp4 / mov / mkv / mp3 / wav / m4a<br>单文件最大 4 GB</div>
+        <div class="btn">选择文件</div>
+      </div>
+
+      <div class="queue">
+        <div class="qrow act">
+          <div>
+            <div class="qname">开学典礼.mp4</div>
+            <div class="qsub">175 分钟 · 226 MB · zh</div>
+          </div>
+          <div class="qst run">37%</div>
+        </div>
+        <div class="qrow">
+          <div>
+            <div class="qname">第3讲_提示工程.mp4</div>
+            <div class="qsub">92 分钟 · 148 MB · zh</div>
+          </div>
+          <div class="qst">排队</div>
+        </div>
+        <div class="qrow">
+          <div>
+            <div class="qname">访谈_圆桌讨论.wav</div>
+            <div class="qsub">48 分钟 · 62 MB · zh</div>
+          </div>
+          <div class="qst">排队</div>
+        </div>
+      </div>
+
+      <div class="params">
+        <div class="prow">
+          <span class="plabel">模型</span>
+          <span class="pval">large-v3 <span class="car">▼</span></span>
+        </div>
+        <div class="prow">
+          <span class="plabel">语言</span>
+          <span class="chips">
+            <span class="chip on">中文</span>
+            <span class="chip">自动</span>
+            <span class="chip">英文</span>
+          </span>
+        </div>
+        <div class="prow">
+          <span class="plabel">设备</span>
+          <span class="chips">
+            <span class="chip on">cuda</span>
+            <span class="chip">cpu</span>
+          </span>
+        </div>
+        <div class="prow">
+          <span class="plabel">输出</span>
+          <span class="chips">
+            <span class="chip on">SRT</span>
+            <span class="chip on">TXT</span>
+            <span class="chip">VTT</span>
+            <span class="chip">JSON</span>
+            <span class="chip">纪要</span>
+          </span>
+        </div>
+        <div class="prow">
+          <span class="plabel">选项</span>
+          <span class="toggles">
+            <span class="tg on"><i></i>静音过滤</span>
+            <span class="tg"><i></i>词级时间戳</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="runbar">
+        <div class="btn-main">开始转写</div>
+        <div class="btn-sec">环境自检</div>
+      </div>
+    </div>
+
+    <!-- 右栏 -->
+    <div class="right">
+      <div class="tabs">
+        <span class="tab on">转写</span>
+        <span class="tab">摘要<span class="n">3</span></span>
+        <span class="tab">双语字幕</span>
+        <span class="tab">导出</span>
+        <span class="tab">设置</span>
+      </div>
+
+      <div class="result" style="padding:0;display:flex;flex-direction:column">
+        <div class="wavebar">
+          <div class="wavebars" id="wb1"></div>
+          <div class="whead"><span>00:00</span><span>正在播放 00:05.71</span><span class="spacer"></span><span>175:23 · 5221 段</span></div>
+        </div>
+        <div style="flex:1;overflow:auto;padding:14px 20px 20px">
+        <div class="seg act">
+          <div class="tm">00:00:05</div>
+          <div>
+            <div class="tx">嘿，OK，声音还可以啊</div>
+          </div>
+        </div>
+        <div class="seg">
+          <div class="tm">00:00:23</div>
+          <div>
+            <div class="tx">来，已经到直播间的同学</div>
+            <div class="en">Come on, classmates who have already entered the live room</div>
+          </div>
+        </div>
+        <div class="seg">
+          <div class="tm">00:00:27</div>
+          <div>
+            <div class="tx">我们先测试一下声音和画面啊</div>
+            <div class="en">Let's first test the sound and picture</div>
+          </div>
+        </div>
+        <div class="seg">
+          <div class="tm">00:00:30</div>
+          <div>
+            <div class="tx">来看看你是否能清晰地听到老师的声音</div>
+          </div>
+        </div>
+        <div class="seg">
+          <div class="tm">00:00:35</div>
+          <div>
+            <div class="tx">清晰地看到我们的这个课件和画面</div>
+          </div>
+        </div>
+        <div class="seg">
+          <div class="tm">00:00:37</div>
+          <div>
+            <div class="tx">今天是我们的开班典礼</div>
+            <div class="en">Today is our opening ceremony</div>
+          </div>
+        </div>
+        <div class="seg">
+          <div class="tm">00:00:40</div>
+          <div>
+            <div class="tx">一会儿我们八点钟准时开始啊</div>
+          </div>
+        </div>
+        <div class="seg">
+          <div class="tm">00:00:44</div>
+          <div>
+            <div class="tx">来，各位同学晚上好</div>
+            <div class="en">Hey everyone, good evening</div>
+          </div>
+        </div>
+        </div>
+      </div>
+
+      <!-- 状态栏 -->
+      <div class="statusbar">
+        <span><span class="led"></span>CUDA 就绪</span>
+        <span>large-v3 · cuda float16</span>
+        <span>已转写 <b>37%</b> · 37 / 5221 段</span>
+        <span>6.4x 实时</span>
+        <span class="spacer"></span>
+        <span>显存 15.2 / 16.0 GB</span>
+        <span>输出 ./out</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 第二屏：摘要视图 -->
+<div class="caption">
+  <h2>方向一 · 摘要视图</h2>
+  <p>同一份时间轴，切换成要点视图 —— 输出不是一段文字，而是同一内容的三种形态</p>
+</div>
+
+<div class="win">
+  <div class="titlebar">
+    <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+    <span class="title">transcribe-cli — 开学典礼.mp4</span>
+    <span class="spacer"></span>
+    <span class="meta">阶段 03 / 05 · 纪要生成中</span>
+  </div>
+  <div class="stage">
+    <div class="stage-fill" style="width:78%"></div>
+    <div class="stage-grid">
+      <div class="stage-cell done"><div class="n">01 解码</div><div class="t">音频提取</div><div class="s">16kHz 单声道</div></div>
+      <div class="stage-cell done"><div class="n">02 识别</div><div class="t">语音转写</div><div class="s">5221 段 · 27 分钟</div></div>
+      <div class="stage-cell now"><div class="n">03 纪要</div><div class="t">要点提炼</div><div class="s">qwen3:8b · 第 2 段</div></div>
+      <div class="stage-cell"><div class="n">04 翻译</div><div class="t">逐段对齐</div><div class="s">待执行</div></div>
+      <div class="stage-cell"><div class="n">05 导出</div><div class="t">写入文件</div><div class="s">6 种格式</div></div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="left">
+      <div class="pane-h">文件<span class="count">3</span></div>
+      <div class="drop">
+        <div class="big">拖入音视频文件</div>
+        <div class="small">支持 mp4 / mov / mkv / mp3 / wav / m4a<br>单文件最大 4 GB</div>
+        <div class="btn">选择文件</div>
+      </div>
+      <div class="queue">
+        <div class="qrow act">
+          <div><div class="qname">开学典礼.mp4</div><div class="qsub">175 分钟 · 226 MB · zh</div></div>
+          <div class="qst run">纪要</div>
+        </div>
+        <div class="qrow"><div><div class="qname">第3讲_提示工程.mp4</div><div class="qsub">92 分钟 · 148 MB · zh</div></div><div class="qst">排队</div></div>
+        <div class="qrow"><div><div class="qname">访谈_圆桌讨论.wav</div><div class="qsub">48 分钟 · 62 MB · zh</div></div><div class="qst">排队</div></div>
+      </div>
+      <div class="params">
+        <div class="prow"><span class="plabel">模型</span><span class="pval">large-v3 <span class="car">▼</span></span></div>
+        <div class="prow"><span class="plabel">语言</span><span class="chips"><span class="chip on">中文</span><span class="chip">自动</span><span class="chip">英文</span></span></div>
+        <div class="prow"><span class="plabel">设备</span><span class="chips"><span class="chip on">cuda</span><span class="chip">cpu</span></span></div>
+        <div class="prow"><span class="plabel">输出</span><span class="chips"><span class="chip on">SRT</span><span class="chip on">TXT</span><span class="chip">VTT</span><span class="chip">JSON</span><span class="chip on">纪要</span></span></div>
+        <div class="prow"><span class="plabel">选项</span><span class="toggles"><span class="tg on"><i></i>静音过滤</span><span class="tg"><i></i>词级时间戳</span></span></div>
+      </div>
+      <div class="runbar"><div class="btn-main">开始转写</div><div class="btn-sec">环境自检</div></div>
+    </div>
+    <div class="right">
+      <div class="tabs">
+        <span class="tab">转写</span>
+        <span class="tab on">摘要<span class="n">3</span></span>
+        <span class="tab">双语字幕</span>
+        <span class="tab">导出</span>
+        <span class="tab">设置</span>
+      </div>
+      <div class="result">
+        <div class="summary">
+          <h3>概要</h3>
+          <p>本次会议介绍了即将开班的 AI 课程，涵盖基础理论与实战项目，旨在帮助学员掌握 AI 技术并应用于实际场景。课程提供多种学习资源与支持，适合不同背景的学习者，助力其在 AI 领域发展。</p>
+          <h3>要点</h3>
+          <ol>
+            <li>课程将于晚上 8 点开班典礼开始，直播中将介绍课程安排、行业场景与技术逻辑。</li>
+            <li>课程内容以基础和通用为主，涵盖提示词、Agent、模型部署、开发框架、微调、知识库等主题。</li>
+            <li>课程结合实战项目，如 OpenMinus、LLM Wiki、工业质检等，帮助学员理解技术逻辑和开发流程。</li>
+            <li>内容涉及 AI 编程、模型训练、部署优化、高并发处理等，适合未来就业和职业转型。</li>
+            <li>提供线上环境、算力券、在线显卡等资源，支持学员在不同场景下进行实操和调试。</li>
+            <li>助教和班主任团队将协助学员解决技术与非技术问题，确保学习顺利进行。</li>
+            <li>课程内容结合行业案例，帮助学员理解 AI 在实际场景中的应用和开发方法。</li>
+            <li>课程从下周二正式开始，内容从基础提示词逐步深入，注重实操应用。</li>
+          </ol>
+          <h3>待办</h3>
+          <p>无</p>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span><span class="led"></span>CUDA 就绪</span>
+        <span>large-v3 · cuda float16</span>
+        <span>转写完成 <b>5221 段</b></span>
+        <span>6.4x 实时</span>
+        <span class="spacer"></span>
+        <span>显存 15.2 / 16.0 GB</span>
+        <span>输出 ./out</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 第三屏：设置 -->
+<div class="caption">
+  <h2>方向一 · 环境自检</h2>
+  <p>底层状态是产品的一部分：CUDA、模型、Ollama、ffmpeg 一屏可见，不藏起来</p>
+</div>
+
+<div class="win">
+  <div class="titlebar">
+    <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+    <span class="title">transcribe-cli — 环境自检</span>
+    <span class="spacer"></span>
+    <span class="meta">全部通过 · 可开始转写</span>
+  </div>
+  <div class="stage">
+    <div class="stage-fill" style="width:100%;background:#1D8A5F"></div>
+    <div class="stage-grid">
+      <div class="stage-cell done"><div class="n">01</div><div class="t">CUDA</div><div class="s">1 张可见设备</div></div>
+      <div class="stage-cell done"><div class="n">02</div><div class="t">模型</div><div class="s">large-v3 已就位</div></div>
+      <div class="stage-cell done"><div class="n">03</div><div class="t">Ollama</div><div class="s">qwen3:8b 已拉取</div></div>
+      <div class="stage-cell done"><div class="n">04</div><div class="t">ffmpeg</div><div class="s">解码器可用</div></div>
+      <div class="stage-cell done"><div class="n">05</div><div class="t">磁盘</div><div class="s">E 盘剩余 412 GB</div></div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="left">
+      <div class="pane-h">文件<span class="count">0</span></div>
+      <div class="drop">
+        <div class="big">拖入音视频文件</div>
+        <div class="small">支持 mp4 / mov / mkv / mp3 / wav / m4a<br>单文件最大 4 GB</div>
+        <div class="btn">选择文件</div>
+      </div>
+      <div class="queue" style="display:flex;align-items:center;justify-content:center;color:#B6BCC6;font-size:12px">
+        队列为空
+      </div>
+      <div class="params">
+        <div class="prow"><span class="plabel">模型</span><span class="pval">large-v3 <span class="car">▼</span></span></div>
+        <div class="prow"><span class="plabel">语言</span><span class="chips"><span class="chip on">中文</span><span class="chip">自动</span></span></div>
+        <div class="prow"><span class="plabel">设备</span><span class="chips"><span class="chip on">cuda</span><span class="chip">cpu</span></span></div>
+      </div>
+      <div class="runbar"><div class="btn-main">开始转写</div><div class="btn-sec">环境自检</div></div>
+    </div>
+    <div class="right">
+      <div class="tabs">
+        <span class="tab">转写</span>
+        <span class="tab">摘要</span>
+        <span class="tab">双语字幕</span>
+        <span class="tab">导出</span>
+        <span class="tab on">设置</span>
+      </div>
+      <div class="result">
+        <div class="setgrid">
+          <div class="set"><div class="k">CUDA 设备</div><div class="v ok">1 张 · RTX 16GB</div></div>
+          <div class="set"><div class="k">CTranslate2</div><div class="v">4.8.3</div></div>
+          <div class="set"><div class="k">faster-whisper</div><div class="v">1.2.1</div></div>
+          <div class="set"><div class="k">模型目录</div><div class="v">E:\whisper_model</div></div>
+          <div class="set"><div class="k">模型规格</div><div class="v">large-v3 · 3.0 GB</div></div>
+          <div class="set"><div class="k">Ollama 服务</div><div class="v ok">运行中</div></div>
+          <div class="set"><div class="k">摘要模型</div><div class="v">qwen3:8b</div></div>
+          <div class="set"><div class="k">ffmpeg</div><div class="v ok">已检测</div></div>
+          <div class="set"><div class="k">计算精度</div><div class="v">float16</div></div>
+          <div class="set"><div class="k">显存占用</div><div class="v">15.2 / 16.0 GB</div></div>
+          <div class="set"><div class="k">输出目录</div><div class="v">.\out</div></div>
+          <div class="set"><div class="k">网络请求</div><div class="v ok">全程无</div></div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span><span class="led"></span>全部就绪</span>
+        <span>自检耗时 1.8 秒</span>
+        <span class="spacer"></span>
+        <span>transcribe-cli v0.1.0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+  // 波形：按段落响度程序化生成，段落块即字幕段
+  function buildWave(id, n){
+    var box = document.getElementById(id);
+    if(!box) return;
+    var NS='http://www.w3.org/2000/svg';
+    var svg=document.createElementNS(NS,'svg');
+    svg.setAttribute('viewBox','0 0 1000 56');
+    svg.setAttribute('preserveAspectRatio','none');
+    // 真实段落时长（秒）：前 8 段来自 out/开学典礼.json
+    var real=[17.6,4.1,3.0,3.9,2.4,3.2,3.9,3.3];
+    var segW=1000/n;
+    for(var i=0;i<n;i++){
+      var amp=real[i%real.length]/18;
+      var done=i<n*0.34, now=(i===Math.floor(n*0.34));
+      for(var k=0;k<4;k++){
+        var h=5+amp*48*(0.55+0.45*Math.abs(Math.sin((i*4+k)*1.1)));
+        var r=document.createElementNS(NS,'rect');
+        r.setAttribute('x',(i*segW+k*2.4).toFixed(2));
+        r.setAttribute('y',((56-h)/2).toFixed(2));
+        r.setAttribute('width','1.8');
+        r.setAttribute('height',h.toFixed(2));
+        r.setAttribute('fill', now? '#E8622D' : (done? '#9FB8DA' : '#D6DCE5'));
+        svg.appendChild(r);
+      }
+    }
+    box.innerHTML='';
+    box.appendChild(svg);
+  }
+  buildWave('wb1',96);
+
+  // 标签页切换（真实可点）
+  document.querySelectorAll('.win').forEach(function(win){
+    var tabs = win.querySelectorAll('.tab');
+    var panes = {
+      '转写': '.seg',
+      '摘要': '.summary',
+      '双语字幕': '.sub',
+      '导出': '.setgrid',
+      '设置': '.setgrid'
+    };
+    tabs.forEach(function(tab){
+      tab.addEventListener('click', function(){
+        tabs.forEach(function(t){ t.classList.remove('on'); });
+        tab.classList.add('on');
+      });
+    });
+  });
+</script>
+</body>
+</html>
