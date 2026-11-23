@@ -95,11 +95,71 @@ function createWindow() {
   });
 }
 
+/**
+ * GPU 进程起不来时（无 GPU 访问权、驱动异常、虚拟机环境），
+ * Electron 默认会 FATAL 直接退出，整个应用打不开。
+ *
+ * 这里做两件事：
+ * 1. 提前关掉 GPU 合成，减少 GPU 进程崩溃的概率
+ * 2. 监听 GPU 进程退出，真崩了就在下次启动时强制软件渲染
+ *
+ * 注意：界面用软件渲染只影响观感，转写走的是 CUDA 计算，与此无关。
+ */
+const GPU_CRASH_MARK = path.join(app.getPath('userData'), 'gpu-crash.flag');
+
+function readGpuCrashFlag() {
+  try {
+    return fs.existsSync(GPU_CRASH_MARK);
+  } catch (_) {
+    return false;
+  }
+}
+
+function writeGpuCrashFlag() {
+  try {
+    fs.writeFileSync(GPU_CRASH_MARK, new Date().toISOString());
+  } catch (_) { /* 写不进去就算了 */ }
+}
+
+function clearGpuCrashFlag() {
+  try {
+    if (fs.existsSync(GPU_CRASH_MARK)) fs.unlinkSync(GPU_CRASH_MARK);
+  } catch (_) { /* 忽略 */ }
+}
+
+// 上次启动崩过 GPU 的话，这次直接软件渲染启动
+if (readGpuCrashFlag()) {
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+  console.log('[gpu] 检测到上次 GPU 崩溃，本次以软件渲染启动');
+} else {
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);   // 菜单栏隐藏，界面自足
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+// GPU 崩溃不再拖垮整个应用：记下标志，下次启动自动软件渲染
+app.on('child-process-gone', (event, details) => {
+  if (details.type === 'GPU') {
+    console.warn('[gpu] GPU 进程退出，下次启动将使用软件渲染');
+    writeGpuCrashFlag();
+  }
+});
+
+// 窗口正常渲染出来就清掉标志（说明这次 GPU 没问题）
+app.on('browser-window-created', (_e, win) => {
+  win.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      if (!win.isDestroyed() && win.webContents.isLoading() === false) {
+        clearGpuCrashFlag();
+      }
+    }, 3000);
   });
 });
 

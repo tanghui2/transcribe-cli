@@ -30,7 +30,7 @@
     ],
     "extraResources": [
       {
-        "from": "../dist/transcribe-cli.exe",
+        "from": "../transcribe-cli/dist/transcribe-cli.exe",
         "to": "backend/transcribe-cli.exe"
       }
     ],
