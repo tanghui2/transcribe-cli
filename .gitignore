@@ -37,7 +37,7 @@ Thumbs.db
 项目介绍.md
 set_private.py
 
-# GUI 桌面版（独立工程在 prototype/transcribe-gui/，不入本仓库）
+# 复制残留（GUI 正式目录是 desktop/）
 gui/
 
 # 临时测试产物

@@ -17,6 +17,8 @@ python -m transcribe_cli lecture.mp4 --language zh --summarize --translate Engli
 
 Windows 用户可直接下载 [Releases](https://github.com/tanghui2/transcribe-cli/releases) 里的单文件 exe（93 MB），无需安装 Python。模型需另行下载（约 3 GB）。
 
+> **桌面版**：不想碰命令行的话，`desktop/` 目录里有完整的 Electron 图形界面 —— 拖文件进去、实时看进度、五个视图切换（转写 / 摘要 / 双语字幕 / 导出 / 设置）。详见[桌面版](#桌面版electron)。
+
 ---
 
 ## 目录
@@ -24,6 +26,7 @@ Windows 用户可直接下载 [Releases](https://github.com/tanghui2/transcribe-
 - [为什么做这个](#为什么做这个)
 - [特性](#特性)
 - [安装](#安装)
+- [桌面版（Electron）](#桌面版electron)
 - [使用](#使用)
 - [输出](#输出)
 - [命令行参数](#命令行参数)
@@ -120,6 +123,85 @@ python -m transcribe_cli --check -v
 ```
 
 更多部署形态（Docker、Web 服务、CI）见 **[DEPLOY.md](DEPLOY.md)**。
+
+## 桌面版（Electron）
+
+`desktop/` 是一个完整的桌面图形界面，Electron 外壳 + 同一个 Python 后端，功能与命令行版一致。
+
+界面采用「状态带驱动」布局：顶部一条贯穿全宽的深色横带，既是五阶段导航（解码 → 识别 → 纪要 → 翻译 → 导出）也是整体进度条；下方左右分栏，左边是文件队列与参数，右边是五个结果视图。
+
+![desktop](desktop/screenshot.png)
+
+### 下载运行
+
+去 [Releases](https://github.com/tanghui2/transcribe-cli/releases) 下载 `transcribe-cli-0.1.0-windows-x64.exe`（169 MB，单文件 portable 版），双击即用。
+
+### 从源码构建
+
+```bash
+# 1. 先构建 Python 后端 exe
+python build_exe.py
+
+# 2. 再打桌面版
+cd desktop && npm install && npm run dist
+```
+
+产物在 `desktop/dist/`。
+
+### 三个必须知道的技术约束
+
+**显存独占，第二个实例会静默崩溃。**
+`large-v3` 占用 12–16 GB 显存。同时启动两个转写进程时，第二个会在模型加载阶段**直接退出**——不产生 Python 异常、日志文件 0 字节、exit=1。
+桌面版在开始转写前会检查显存占用，剩余不足 4 GB 时弹窗告知，而不是让进程悄无声息地消失。
+
+**多任务实际是串行的。**
+显存装不下两个 `large-v3`，所以队列里的文件是依次处理的，不是并行。界面上的「排队」状态是准确的。
+
+**取消任务要杀整个进程树。**
+只杀父进程的话 Python 子进程会残留并继续占用显存，所以用的是 `taskkill /PID <pid> /T /F`。
+
+### 结构化进度事件（CLI 侧的改动）
+
+桌面版需要知道「转写到第几段、百分比、实时倍率」，所以 CLI 加了 `--events` 开关：
+
+```bash
+python -m transcribe_cli lecture.mp4 --events
+```
+
+```json
+{"__event": true, "event": "stage", "stage": "asr", "state": "now", "detail": "cuda · float16"}
+{"__event": true, "event": "segments", "pct": 39.15, "speed": 16.35, "new": {...}, "count": 1}
+{"__event": true, "event": "summary", "data": {...}}
+{"__event": true, "event": "bilingual", "data": [...]}
+{"__event": true, "event": "exports", "data": [...]}
+```
+
+事件类型：`stage`（阶段切换）、`segments`（增量段落）、`summary`、`bilingual`、`exports`。
+
+> `segments` 事件**只推新增的那一段**（字段 `new`），不重发整个数组 —— 否则 5221 段会产生 O(n²) 的数据传输量。
+
+### 环境要求
+
+| 项 | 要求 |
+|---|---|
+| 系统 | Windows x64（macOS / Linux 未打包） |
+| 显卡 | NVIDIA GPU + CUDA（无 GPU 时自动降级到 CPU，速度约为十分之一） |
+| 模型 | faster-whisper 模型，需自行下载（large-v3 约 3 GB） |
+| 摘要 / 翻译 | 需要本地 [Ollama](https://ollama.com/) 运行 `qwen3:8b`（可选，缺失时跳过这两步） |
+
+模型目录优先级：`TRANSCRIBE_MODEL_DIR` 环境变量 → `E:/whisper_model` → 用户数据目录。
+
+### 开发踩坑记录
+
+给后来者省点时间，这几条都是实测踩到的：
+
+- **Electron 32+ 起，即使 `sandbox: false`，preload 也无法 `require('fs')`**。文件读取必须走 IPC 到主进程执行。
+- **`ELECTRON_RUN_AS_NODE=1` 会让 Electron 二进制永远不下载**（npm 装完但 `dist/` 是空的）。启动前必须 `env -u ELECTRON_RUN_AS_NODE`。
+- **`NODE_OPTIONS` 里带 `--use-system-ca` 会让 Electron 拒绝启动**。同样要 `env -u NODE_OPTIONS`。
+- **依赖完整性不要自己写检测脚本**。现代 npm 包不写 `main` 字段，只用 ESM 的 `exports`，自己拼路径判断会连环误判。让实际消费者报错，或用 Node 的 `require.resolve`。
+- **CTranslate2 的 `TranscriptionInfo` 没有 `elapsed` 字段**。在回调里直接访问会抛 `AttributeError` 且被静默吞掉，表现为「进度事件一条都不发」。耗时要在自己的函数里算好再传。
+
+---
 
 ## 使用
 

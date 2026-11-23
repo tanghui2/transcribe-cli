@@ -1,0 +1,52 @@
+{
+  "name": "transcribe-gui",
+  "productName": "transcribe-cli",
+  "version": "0.1.0",
+  "description": "本地音视频转写 / 摘要 / 翻译 / 字幕生成桌面应用，全程离线，零 API 成本",
+  "main": "main.js",
+  "author": "tanghui2",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win portable",
+    "dist:nsis": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.tanghui2.transcribe-cli",
+    "productName": "transcribe-cli",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/transcribe-cli.exe",
+        "to": "backend/transcribe-cli.exe"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "transcribe-cli-${version}-windows-x64.${ext}"
+    },
+    "portable": {
+      "artifactName": "transcribe-cli-${version}-windows-x64.exe"
+    },
+    "compression": "maximum"
+  },
+  "dependencies": {
+    "http-proxy-agent": "^9.1.0"
+  }
+}
