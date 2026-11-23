@@ -42,8 +42,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--out-dir", default="./out", help="输出目录")
     p.add_argument("--stem", default=None, help="输出文件名主干，默认取输入文件名")
     p.add_argument("--check", action="store_true", help="只做环境自检并退出")
+    p.add_argument(
+        "--events",
+        action="store_true",
+        help="以 NDJSON 向 stdout 输出结构化进度事件（供 GUI 消费），普通输出仍走 stderr",
+    )
     p.add_argument("-v", "--verbose", action="store_true", help="打印调试信息")
     return p
+
+
+def _emit(payload: dict) -> None:
+    """输出一个 NDJSON 事件行。
+
+    只有 --events 开启时生效；事件走 stdout，普通文本走 stdout 会被 GUI
+    当作普通日志处理，两者在 GUI 侧靠 __event 字段区分。
+    """
+    payload = {"__event": True, **payload}
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -93,11 +109,33 @@ def main(argv: list[str] | None = None) -> int:
     from . import core
 
     # 转写
+    seg_buffer: list[dict] = []
+
     def on_progress(seg, info):
         pct = (seg.end / info.duration * 100) if info.duration else 0
-        print(f"\r  [{pct:5.1f}%] {seg.text.strip()[:60]}", end="", flush=True)
+        # 终端里逐行刷新进度；事件模式下由 GUI 自己渲染，这里不再重复打印
+        if not args.events:
+            print(f"\r  [{pct:5.1f}%] {seg.text.strip()[:60]}", end="", flush=True)
+        # 事件模式：只推送新增的那一段，避免 O(n²) 的数据传输
+        if args.events:
+            seg_buffer.append({
+                "start": round(seg.start, 3),
+                "end": round(seg.end, 3),
+                "text": seg.text,
+            })
+            speed = info.duration / max(info.elapsed, 0.01) if info.duration else 0
+            _emit({
+                "event": "segments",
+                "pct": round(pct, 2),
+                "speed": round(speed, 2),
+                "new": seg_buffer[-1],
+                "count": len(seg_buffer),
+            })
 
     print("转写中…")
+    if args.events:
+        _emit({"event": "stage", "stage": "decode", "state": "done", "detail": "16kHz 单声道"})
+        _emit({"event": "stage", "stage": "asr", "state": "now", "detail": f"{args.device} · {compute_type}"})
     try:
         transcript = core.transcribe(
             media_path,
@@ -109,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             vad_filter=not args.no_vad,
             word_timestamps=args.words,
             initial_prompt=args.prompt,
-            on_progress=on_progress if args.verbose else None,
+            on_progress=on_progress,
         )
     except Exception as e:
         # CUDA 显存不足是最常见的失败原因：另一个转写任务占着显存时，
@@ -137,6 +175,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"转写完成：{len(transcript.segments)} 段 / {transcript.elapsed:.1f} 秒"
           f"（{transcript.duration / max(transcript.elapsed, 0.01):.1f}x 实时）")
 
+    if args.events:
+        _emit({"event": "stage", "stage": "asr", "state": "done", "detail": f"{len(transcript.segments)} 段"})
+
     # 输出
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -158,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.summarize:
         print("-" * 50)
         print("生成纪要（本地 Ollama）…")
+        if args.events:
+            _emit({"event": "stage", "stage": "summary", "state": "now", "detail": "qwen3:8b · 本地"})
         summary = core.summarize(transcript)
         if summary:
             summary_path = out_dir / f"{stem}.summary.md"
@@ -165,6 +208,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {summary_path}")
             print()
             print(summary)
+            if args.events:
+                _emit({"event": "stage", "stage": "summary", "state": "done", "detail": "已生成"})
+                _emit({"event": "summary", "data": parse_summary(summary)})
         else:
             print("  跳过：Ollama 不可用或转写内容为空")
 
@@ -172,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.translate:
         print("-" * 50)
         print(f"翻译到 {args.translate}（本地 Ollama）…")
+        if args.events:
+            _emit({"event": "stage", "stage": "trans", "state": "now", "detail": f"→ {args.translate}"})
         if args.bilingual_srt:
             # 逐段翻译并写回 SRT，保持时间轴对齐
             lines = core.translate_segments(transcript, target_lang=args.translate)
@@ -180,6 +228,9 @@ def main(argv: list[str] | None = None) -> int:
                     transcript, lines, out_dir / f"{stem}.{args.translate}.srt"
                 )
                 print(f"  {tr_path}（双语字幕，时间轴对齐）")
+                if args.events:
+                    _emit({"event": "stage", "stage": "trans", "state": "done", "detail": "已对齐"})
+                    _emit({"event": "bilingual", "data": build_bilingual(transcript, lines)})
             else:
                 print("  跳过：Ollama 不可用或转写内容为空")
         else:
@@ -191,7 +242,67 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("  跳过：Ollama 不可用或转写内容为空")
 
+    # 导出完成
+    if args.events:
+        _emit({"event": "stage", "stage": "export", "state": "now", "detail": "写入文件"})
+        produced = []
+        for p in (srt_path, vtt_path, txt_path, json_path):
+            try:
+                produced.append({"name": p.name, "size": p.stat().st_size})
+            except OSError:
+                pass
+        _emit({"event": "stage", "stage": "export", "state": "done", "detail": f"{len(produced)} 个文件"})
+        _emit({"event": "exports", "data": produced})
+
     return 0
+
+
+def parse_summary(raw: str) -> dict:
+    """把纪要 markdown 解析成结构化数据，供 GUI 渲染。
+
+    格式：【概要】/【要点】/【待办】三段。
+    """
+    result = {"overview": "", "points": [], "todos": ""}
+    current = None
+    for line in raw.splitlines():
+        text = line.strip()
+        if text.startswith("【概要】"):
+            current = "overview"
+            continue
+        if text.startswith("【要点】"):
+            current = "points"
+            continue
+        if text.startswith("【待办】"):
+            current = "todos"
+            continue
+        if not text:
+            continue
+        if current == "overview":
+            result["overview"] += text
+        elif current == "points":
+            # 去掉 "1. " 这类序号前缀
+            cleaned = text.split(". ", 1)[-1] if text[:2].strip().rstrip(".").isdigit() else text
+            result["points"].append(cleaned)
+        elif current == "todos":
+            result["todos"] += text
+    result["overview"] = result["overview"].strip()
+    result["todos"] = result["todos"].strip()
+    return result
+
+
+def build_bilingual(transcript, lines: list[str]) -> list[dict]:
+    """把段落与逐段译文合成双语对照数据。"""
+    out = []
+    for i, seg in enumerate(transcript.segments):
+        if i >= len(lines):
+            break
+        out.append({
+            "start": round(seg.start, 3),
+            "end": round(seg.end, 3),
+            "zh": seg.text.strip(),
+            "en": lines[i].strip(),
+        })
+    return out
 
 
 if __name__ == "__main__":

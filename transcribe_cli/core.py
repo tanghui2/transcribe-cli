@@ -32,6 +32,15 @@ class Segment:
 
 
 @dataclass
+class ProgressInfo:
+    """转写进度回调的上下文。"""
+
+    duration: float          # 媒体总时长（秒）
+    language: str            # 识别出的语种
+    elapsed: float           # 已耗时（秒）
+
+
+@dataclass
 class Transcript:
     """整篇转写结果。"""
 
@@ -164,7 +173,14 @@ def transcribe(
         )
         segments.append(item)
         if on_progress:
-            on_progress(item, info)
+            # 回调参数只带真正存在的字段：duration 来自转写信息，
+            # elapsed 由本函数自己算（faster-whisper 的 info 里没有）。
+            elapsed = time.time() - t0
+            on_progress(item, ProgressInfo(
+                duration=info.duration,
+                language=info.language,
+                elapsed=elapsed,
+            ))
 
     return Transcript(
         segments=segments,

@@ -36,3 +36,13 @@ Thumbs.db
 介绍文案-多场合.md
 项目介绍.md
 set_private.py
+
+# GUI 桌面版（独立工程在 prototype/transcribe-gui/，不入本仓库）
+gui/
+
+# 临时测试产物
+_evout/
+_exeev/
+_t2/
+_ev.wav
+_packev/
