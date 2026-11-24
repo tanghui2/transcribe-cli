@@ -315,6 +315,9 @@ function viewSettings() {
   const gpu = S.gpu || {};
   const ok = gpu.ok;
   const pct = ok ? Math.round((1 - gpu.ratio) * 100) : 0;
+  // 显存需求随模型变化，但设置页可能在模型规格加载前就渲染 ——
+  // 这里兜个底，别让界面上出现 "undefined GB"。
+  const needGiB = Number.isFinite(gpu.needGiB) ? gpu.needGiB : 12;
   const ring = `
     <svg class="ring" viewBox="0 0 100 100" role="img" aria-label="显存占用 ${gpu.ratio ? Math.round(gpu.ratio * 100) : 0}%">
       <circle cx="50" cy="50" r="42" fill="none" stroke="#EDF0F4" stroke-width="11"></circle>
@@ -331,7 +334,7 @@ function viewSettings() {
       <div>
         <div class="h1">${ok ? '本地推理环境就绪' : '未检测到 NVIDIA 显卡'}</div>
         <div class="h2">${ok
-          ? `显存已用 <b>${gpu.used.toFixed(1)} GB</b>，总计 <b>${gpu.total.toFixed(1)} GB</b>，剩余 <b>${gpu.free.toFixed(1)} GB</b>。当前模型需要约 ${gpu.needGiB} GB，剩余不足时请先关闭其他占用 GPU 的程序 —— 否则转写进程会在加载模型阶段静默退出（不报错）。`
+          ? `显存已用 <b>${gpu.used.toFixed(1)} GB</b>，总计 <b>${gpu.total.toFixed(1)} GB</b>，剩余 <b>${gpu.free.toFixed(1)} GB</b>。当前模型需要约 ${needGiB} GB，剩余不足时请先关闭其他占用 GPU 的程序 —— 否则转写进程会在加载模型阶段静默退出（不报错）。`
           : '未检测到 NVIDIA 显卡，将自动降级到 CPU 推理，速度约为 GPU 的十分之一。'}</div>
       </div>
     </div>
