@@ -15,9 +15,9 @@ python -m transcribe_cli lecture.mp4 --language zh --summarize --translate Engli
 
 > 175 分钟中文课程视频 → **27 分钟**跑完全流程（6.4 倍实时），产出 SRT / VTT / TXT / JSON / 中文纪要 / 英文译文 6 份文件；加 `--bilingual-srt` 则第 7 份（时间轴对齐的双语字幕）一并产出。
 
-Windows 用户可直接下载 [Releases](https://github.com/tanghui2/transcribe-cli/releases) 里的单文件 exe（93 MB），无需安装 Python。模型需另行下载（约 3 GB）。
+Windows 用户可直接下载 [Releases](https://github.com/tanghui2/transcribe-cli/releases) 里的压缩包，无需安装 Python。模型需另行下载（约 3 GB）。
 
-> **桌面版**：不想碰命令行的话，`desktop/` 目录里有完整的 Electron 图形界面 —— 拖文件进去、实时看进度、五个视图切换（转写 / 摘要 / 双语字幕 / 导出 / 设置）。详见[桌面版](#桌面版electron)。
+> **桌面版**：不想碰命令行的话，`desktop/` 目录里有完整的 Electron 图形界面 —— 拖文件进去、实时看进度、六个视图切换（转写 / 校对 / 摘要 / 双语字幕 / 导出 / 设置）。详见[桌面版](#桌面版electron)。
 
 ---
 
@@ -82,9 +82,19 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 方式二：下载单文件 exe（Windows）
+### 方式二：下载打包好的 exe（Windows）
 
-从 [Releases](https://github.com/tanghui2/transcribe-cli/releases) 下载 `transcribe-cli-windows-x64.exe`，无需安装 Python。
+从 [Releases](https://github.com/tanghui2/transcribe-cli/releases) 下载，无需安装 Python：
+
+| 文件 | 用途 |
+|---|---|
+| `transcribe-cli-0.2.0-windows-x64.zip` | 桌面版，**解压后双击 `transcribe-cli.exe` 即可** |
+| `transcribe-cli-cli-0.2.0-windows-x64.zip` | 命令行版，解压后运行 `transcribe-cli.exe` |
+
+两个压缩包都是「多文件 + 一个 exe 启动」的形式：解压出来的目录要整体保留，
+exe 会从同目录的 `resources/` 里找后端与界面文件。
+
+> 解压后如果双击没反应，看[启动排错](#启动排错)一节。
 
 ### 下载模型
 
@@ -290,6 +300,55 @@ python -m transcribe_cli lecture.mp4 --proofread
 | 删除含字母数字 | 不能删数学符号（实测「D定义语」→「定义语」删掉了 D） |
 
 实测 1135 段课程转写：124 秒查完，67 个校对块零失败，修正 56 处。
+
+## 启动排错
+
+桌面版双击没反应时，按这个顺序查：
+
+**1. 看启动日志**
+
+```
+%APPDATA%\transcribe-cli\startup.log
+```
+
+这个文件记录了应用启动到哪一步（app ready / 界面加载失败 / GPU 崩溃等）。
+没有这个文件说明进程在 Electron 初始化之前就退了。
+
+**2. 确认目录完整**
+
+解压出来的目录要**整体保留**，exe 从同目录找资源：
+
+```
+transcribe-cli.exe
+resources/
+├── app.asar              ← 界面代码
+└── backend/
+    └── transcribe-cli.exe ← Python 后端
+```
+
+只把 exe 单独拷走一定会失败。
+
+**3. 显卡导致的启动失败**
+
+没有显卡访问权时（虚拟机、远程桌面、驱动异常），Electron 的 GPU 进程会反复崩溃
+并把整个应用带崩。程序已经内置兜底：检测到无显卡或上次崩过，会自动用软件渲染启动。
+
+仍然打不开时，可以手动指定：
+
+```bash
+transcribe-cli.exe --disable-gpu
+```
+
+界面用软件渲染只影响观感（转写走 CUDA 计算，与此无关）。
+
+**4. 环境变量冲突**
+
+如果启动时命令行提示 `--use-system-ca is not allowed in NODE_OPTIONS`，
+说明 `NODE_OPTIONS` 环境变量里有 Electron 不接受的参数。清掉即可：
+
+```bash
+set NODE_OPTIONS=
+```
 
 ## 命令行参数
 

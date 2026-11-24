@@ -68,6 +68,9 @@ build_v3/
 
 # 打包中间产物
 desktop/shots/
+
+# Release 物料（几百 MB，走 GitHub Release 分发，不进仓库）
+release-assets/
 _t2/
 _ev.wav
 _packev/
