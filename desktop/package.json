@@ -1,7 +1,7 @@
 {
   "name": "transcribe-gui",
   "productName": "transcribe-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "本地音视频转写 / 摘要 / 翻译 / 字幕生成桌面应用，全程离线，零 API 成本",
   "main": "main.js",
   "author": "tanghui2",

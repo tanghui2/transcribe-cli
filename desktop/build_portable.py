@@ -37,7 +37,7 @@ SEVENZA = Path(os.environ.get(
     "TCLI_SEVENZA",
     r"E:/tmp/electroncache/7zip@1.0.0/7zip-win-x64-a34pt/bin/7za.exe",
 ))
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 APP_NAME = "transcribe-cli"
 BACKEND = PROJECT / "dist_v3" / "transcribe-cli.exe"
 
