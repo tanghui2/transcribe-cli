@@ -62,6 +62,12 @@ dist_new/
 dist_v2/
 build_new/
 build_v2/
+dist_v3/
+build_v3/
+build_v3/
+
+# 打包中间产物
+desktop/shots/
 _t2/
 _ev.wav
 _packev/

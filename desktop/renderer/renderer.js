@@ -186,6 +186,37 @@ function viewTranscript() {
     <div style="flex:1;overflow:auto;padding:14px 20px 20px">${rows}</div></div>`;
 }
 
+/**
+ * 把校对前后的差异高亮出来。
+ *
+ * 逐字符比对找出差异区间，差异部分用 <mark> 标出。
+ * 没有整行上下文时（如后端只给了词语），直接高亮词语本身。
+ */
+function highlightDiff(original, corrected, wrong, right) {
+  if (!original || !corrected) return esc(corrected || '');
+  const a = String(original);
+  const b = String(corrected);
+
+  // 找出首个差异点与末个差异点
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--;
+    endB--;
+  }
+
+  // 差异区间过大说明整体重写了，不高亮（避免整段标黄）
+  if (endB - start > 12) return esc(b);
+
+  return (
+    esc(b.slice(0, start)) +
+    `<mark>${esc(b.slice(start, endB))}</mark>` +
+    esc(b.slice(endB))
+  );
+}
+
 function viewProofread() {
   const pr = S.proofread;
   if (!pr) {
@@ -210,14 +241,22 @@ function viewProofread() {
       <div class="et" style="font-size:13px">${pr.scanned} 段文本均未发现同音误识别或专有名词错误</div></div>`;
   }
 
-  const rows = pr.changes.map((c, i) => `
+  const rows = pr.changes.map((c, i) => {
+    // 有整行上下文时展示整行对照，否则退回词语对照
+    const before = c.fullOriginal || c.original;
+    const after = c.fullCorrected || c.corrected;
+    const afterHtml = c.fullOriginal
+      ? highlightDiff(c.fullOriginal, c.fullCorrected)
+      : esc(c.corrected);
+    return `
     <div class="pr-item">
       <div class="pr-no">${i + 1}</div>
       <div class="pr-body">
-        <div class="pr-before"><span class="pr-tag">原文</span>${esc(c.original)}</div>
-        <div class="pr-after"><span class="pr-tag">改后</span>${esc(c.corrected)}</div>
+        <div class="pr-before"><span class="pr-tag">原文</span>${esc(before)}</div>
+        <div class="pr-after"><span class="pr-tag">改后</span>${afterHtml}</div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   return head + `<div class="pr-list">${rows}</div>`;
 }
