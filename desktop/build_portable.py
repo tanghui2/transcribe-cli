@@ -95,6 +95,33 @@ def step2_build_asar() -> Path:
     shutil.copytree(DESKTOP / "renderer", stage / "renderer", dirs_exist_ok=True)
 
     out = WORK / "app.asar"
+
+    # 优先用官方 @electron/asar 工具（带 integrity 字段，Electron 支持度最好）；
+    # 工具跑不起来时退回自研实现。
+    asar_cli = None
+    for base in (DESKTOP / "node_modules", WORK / "node_modules",
+                 r"E:/tmp/gb3/node_modules"):
+        cand = Path(base) / "@electron" / "asar" / "bin" / "asar.js"
+        if cand.exists():
+            asar_cli = cand
+            break
+
+    node = Path(os.environ.get(
+        "TCLI_NODE",
+        r"C:/Users/a/.workbuddy/binaries/node/versions/22.22.2/node.exe",
+    ))
+    if asar_cli and node.exists():
+        log(f"用官方 @electron/asar 打包：{asar_cli}")
+        r = subprocess.run(
+            [str(node), str(asar_cli), "pack", str(stage), str(out)],
+            capture_output=True, text=True, errors="ignore",
+            env={**os.environ, "ELECTRON_RUN_AS_NODE": ""},
+        )
+        if r.returncode == 0 and out.exists():
+            log(f"app.asar 就绪（{out.stat().st_size // 1024} KB）")
+            return out
+        log("官方工具失败，退回自研实现")
+
     pack(str(stage), str(out))
     return out
 
