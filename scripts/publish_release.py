@@ -85,6 +85,11 @@ def main() -> int:
         raise SystemExit(f"  {ASSETS_DIR} 里没有 zip 文件")
     for a in assets:
         print(f"  {a.name}  {a.stat().st_size / 1024 / 1024:.1f} MB")
+    # 校验文件也一起传，方便用户验证下载完整性
+    sums = ASSETS_DIR / "SHA256SUMS.txt"
+    if sums.exists():
+        assets.append(sums)
+        print(f"  {sums.name}（校验值）")
     notes = None
     for cand in NOTES_CANDIDATES:
         p = PROJECT / cand

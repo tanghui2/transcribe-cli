@@ -13,6 +13,13 @@
 
 **模型需另行下载**（约 3 GB，不含在 Release 里）：见 README 的「下载模型」一节。
 
+校验值（`SHA256SUMS.txt` 也作为附件提供）：
+
+```
+8be5537749099e3251eec2dec6dc923d8edbc1c39ee67576098b76c3db093263  transcribe-cli-0.2.0-windows-x64.zip
+36a6dc63ade6d6566b537470017d2a5d2ecb25359b4636d1c4f2110b82bd9b50  transcribe-cli-cli-0.2.0-windows-x64.zip
+```
+
 ## 新增：转写文字自动校对
 
 语音识别难免有同音错别字，尤其是术语和人名。新增 `--proofread` 自动修正：
