@@ -46,6 +46,12 @@ desktop/dist/
 desktop/build/
 desktop/_*.js
 desktop/_*.png
+desktop/_*.py
+
+# 临时脚本（正式工具是 fix_deps.py 与 fix_deps_by_node.py）
+desktop/fix_node_modules.py
+desktop/fix_deps_by_node.js
+desktop/_check_broken.js
 
 # 临时测试产物
 _evout/
