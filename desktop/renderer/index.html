@@ -237,6 +237,44 @@
     border-radius:12px;box-shadow:0 24px 60px rgba(16,24,40,.28);padding:26px 28px;
   }
   .mbox h2{font-size:20px;font-weight:600;margin-bottom:8px}
+
+  /* 模型卡片：详细的参数说明 */
+  .mcard .mname{display:flex;align-items:baseline;gap:8px}
+  .mcard .mname .mt{font-size:16px;font-weight:600}
+  .mcard .mname .mv{font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+  .mcard .mtag{
+    display:inline-block;font-size:12px;padding:2px 7px;border-radius:3px;
+    background:var(--accent-soft);color:var(--accent-btn);margin-top:9px;font-weight:500;
+  }
+  .mcard .mrow{
+    display:grid;grid-template-columns:64px 1fr;gap:10px;
+    margin-top:8px;align-items:baseline;
+  }
+  .mcard .mk{font-size:13px;color:var(--ink-3);white-space:nowrap}
+  .mcard .mv2{font-size:13.5px;color:var(--ink-2);line-height:1.55}
+  .mcard .mbar{height:6px;border-radius:3px;background:var(--line-2);overflow:hidden;margin-top:5px}
+  .mcard .mbar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+  .mcard .mbar i.dim{background:#9FB8DA}
+  .mcard .mfoot{
+    margin-top:11px;padding-top:10px;border-top:1px solid var(--line-2);
+    display:flex;justify-content:space-between;align-items:baseline;
+  }
+  .mcard .msize{font-family:var(--mono);font-size:13px;color:var(--ink)}
+  .mcard .mnote{font-size:13px;color:var(--ink-2);margin-top:8px;line-height:1.6}
+
+  /* 输出目录选择 */
+  .prow-out{align-items:flex-start}
+  .outpick{display:flex;align-items:center;gap:8px;min-width:0}
+  .outpath{
+    font-family:var(--mono);font-size:12px;color:var(--ink-2);
+    max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    padding:4px 8px;border:1px solid var(--line);border-radius:4px;background:#fff;
+  }
+  .outbtn{
+    font-size:13px;padding:4px 10px;border-radius:4px;border:1px solid var(--line);
+    background:#fff;color:var(--ink-2);cursor:pointer;white-space:nowrap;
+  }
+  .outbtn:hover{border-color:var(--ink-3);background:#F7F8FA}
   .mbox .lead{font-size:14.5px;color:var(--ink-2);line-height:1.75;margin-bottom:20px}
   .mgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}
   .mcard{border:1px solid var(--line);border-radius:8px;padding:14px;background:#fff;cursor:pointer}
@@ -262,7 +300,6 @@
   </div>
   <span class="title" id="winTitle">transcribe-cli</span>
   <span class="spacer"></span>
-  <span class="meta" id="titleMeta">本地推理 · 无网络请求</span>
   <div class="wbtns">
     <div class="wbtn" id="btnMin" title="最小化">&#x2013;</div>
     <div class="wbtn" id="btnMax" title="最大化">&#x25A1;</div>
@@ -327,6 +364,13 @@
           <span class="tg" id="tgWords"><i></i>词级时间戳</span>
         </span>
       </div>
+      <div class="prow prow-out">
+        <span class="plabel">输出</span>
+        <span class="outpick">
+          <span class="outpath" id="outPath" title="">默认输出目录</span>
+          <span class="outbtn" id="btnPickOut">更改</span>
+        </span>
+      </div>
     </div>
 
     <div class="runbar">
@@ -364,11 +408,7 @@
   <div class="mbox">
     <h2>选择模型</h2>
     <div class="lead">模型在本地运行，不上传任何服务器。体积越大越准，体积越小越快。中文课程录音这类清晰人声，medium 已经很够用。</div>
-    <div class="mgrid" id="mgrid">
-      <div class="mcard" data-dir=""><div class="mt">small</div><div class="mb">最快，体积最小。中文准确率一般，适合快速预览。</div><div class="ms"><span>500 MB</span><span class="dl">按需</span></div></div>
-      <div class="mcard" data-dir=""><div class="mt">medium</div><div class="mb">速度与准确率的平衡点。中文课程、访谈的推荐档。</div><div class="ms"><span>1.5 GB</span><span class="dl">推荐</span></div></div>
-      <div class="mcard sel" data-dir="E:/whisper_model"><div class="mt">large-v3</div><div class="mb">准确率最高，多语种与专有名词表现最好。实测 6.4 倍实时。</div><div class="ms"><span>3.0 GB</span><span class="dl">最准</span></div></div>
-      <div class="mcard" data-dir=""><div class="mt">turbo</div><div class="mb">large-v3 级别的准确度，速度接近 medium。显存占用更低。</div><div class="ms"><span>1.6 GB</span><span class="dl">均衡</span></div></div>
+    <div class="mgrid" id="mgrid"></div>
     </div>
     <div class="foot">
       <button class="mbtn" id="mCancel">取消</button>

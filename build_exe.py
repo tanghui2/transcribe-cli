@@ -15,11 +15,17 @@
 4. add-data 的源路径必须写绝对路径，否则会按 spec 目录解析（坑过一次）。
 """
 import os
+import shutil
 import subprocess
 import sys
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(PROJECT_DIR)
+
+# 输出目录可用环境变量覆盖：正在运行的实例会锁住 dist 里的 exe，
+# 这时换目录重建即可，不必先关掉用户正在测试的程序。
+DIST_DIR = os.path.join(PROJECT_DIR, os.environ.get("TRANSCRIBE_DIST_DIR", "dist"))
+BUILD_DIR = os.path.join(PROJECT_DIR, os.environ.get("TRANSCRIBE_BUILD_DIR", "build"))
 
 cmd = [
     sys.executable, "-m", "PyInstaller",
@@ -45,21 +51,28 @@ cmd = [
     "--exclude-module", "matplotlib",
     "--exclude-module", "PIL",
     "--exclude-module", "pandas",
-    "--distpath", os.path.join(PROJECT_DIR, "dist"),
-    "--workpath", os.path.join(PROJECT_DIR, "build"),
-    "--specpath", os.path.join(PROJECT_DIR, "build"),
+    "--distpath", DIST_DIR,
+    "--workpath", BUILD_DIR,
+    "--specpath", BUILD_DIR,
 ]
 
 print("执行：")
 print("  " + " ".join(cmd[:6]) + " ...")
 print()
 
+# PyInstaller 的 build 目录带缓存：改了源码不清掉，打出来的仍是旧版 exe
+# （踩过一次：exports 事件加了 path 字段，exe 里却没有）。
+# --noconfirm 只覆盖产物，不清分析缓存，所以这里显式清一次。
+if os.path.isdir(BUILD_DIR):
+    shutil.rmtree(BUILD_DIR, ignore_errors=True)
+    print(f"已清理构建缓存：{BUILD_DIR}")
+
 proc = subprocess.run(cmd)
 if proc.returncode != 0:
     print("\n打包失败，请检查上方输出", file=sys.stderr)
     sys.exit(proc.returncode)
 
-exe_path = os.path.join(PROJECT_DIR, "dist", "transcribe-cli.exe")
+exe_path = os.path.join(DIST_DIR, "transcribe-cli.exe")
 if os.path.exists(exe_path):
     size_mb = os.path.getsize(exe_path) / 1024 / 1024
     print(f"\n打包完成：{exe_path}")

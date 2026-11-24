@@ -49,6 +49,21 @@ function resolveModelDir() {
   return candidates[0];
 }
 
+/**
+ * 输出目录：主进程是唯一权威。
+ *
+ * 之前这里有个真实的 bug：outDir 为空时 CLI 用自己的默认 "./out"，
+ * 那个路径相对后端 exe 所在目录（打包后是 resources/backend/out），
+ * 而渲染层却去 Documents	ranscribe-cli 输出 找文件——
+ * 转写其实成功了，界面却显示不出任何结果。
+ *
+ * 现在统一：主进程永远显式传 --out-dir，渲染层只读这里的值。
+ */
+function resolveOutputDir() {
+  if (process.env.TRANSCRIBE_OUTPUT_DIR) return process.env.TRANSCRIBE_OUTPUT_DIR;
+  return path.join(app.getPath('documents'), 'transcribe-cli 输出');
+}
+
 /** 模型目录里是否真的有模型文件（区分"路径存在"和"模型就位"） */
 function modelReady(dir) {
   try {
@@ -219,7 +234,8 @@ ipcMain.handle('transcribe:run', async (event, payload) => {
   if (summarize) args.push('--summarize');
   if (translate) args.push('--translate', translate);
   if (bilingualSrt) args.push('--bilingual-srt');
-  if (outDir) args.push('--out-dir', outDir);
+  // 输出目录始终显式传入，避免 CLI 落到它自己的默认相对路径
+  args.push('--out-dir', outDir || resolveOutputDir());
   args.push('--events');                      // 结构化进度事件，供 GUI 消费
 
   const cwd = resolveBackendDir();
@@ -329,12 +345,15 @@ ipcMain.handle('transcribe:gpu', async () => {
       if (err) { resolve({ ok: false, message: '未检测到 NVIDIA 显卡' }); return; }
       const line = (stdout || '').trim().split('\n')[0];
       if (!line) { resolve({ ok: false, message: '无法读取显存信息' }); return; }
-      const [used, total] = line.split(',').map((x) => parseInt(x.trim(), 10));
+      // nounits 输出的单位是 MiB，不是 GB
+      const [usedMiB, totalMiB] = line.split(',').map((x) => parseInt(x.trim(), 10));
       resolve({
         ok: true,
-        used, total,
-        free: total - used,
-        ratio: total ? used / total : 0,
+        usedMiB, totalMiB,
+        used: usedMiB / 1024,
+        total: totalMiB / 1024,
+        free: (totalMiB - usedMiB) / 1024,
+        ratio: totalMiB ? usedMiB / totalMiB : 0,
       });
     });
   });
@@ -387,7 +406,8 @@ ipcMain.handle('app:paths', () => {
     python: resolvePythonCommand(),
     isPackaged: app.isPackaged,
     version: app.getVersion(),
-    outputs: path.join(app.getPath('documents'), 'transcribe-cli 输出'),
+    outputDir: resolveOutputDir(),
+    outputs: resolveOutputDir(),
     exePath: app.getPath('exe'),
   };
 });

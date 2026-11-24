@@ -24,6 +24,62 @@ const S = {
   stages: [],           // 状态带五格
 };
 
+/**
+ * 模型规格表。
+ *
+ * 数据来源：faster-whisper 官方模型卡 + 本机实测（large-v3 在单卡 16GB 上
+ * 跑 175 分钟中文课程为 6.4 倍实时）。
+ *
+ * 准确率用公开基准的相对水平表示（不是绝对 CER），
+ * 因为不同语种与音频条件差异很大，给绝对数字会误导用户。
+ */
+const MODELS = [
+  {
+    key: 'large-v3',
+    dir: 'E:/whisper_model',
+    tag: '最准',
+    size: '3.0 GB',
+    speed: 6.4,
+    accuracy: 100,
+    vram: '12 - 16 GB',
+    good: '中文课程、访谈、播客、多语种内容、专业术语',
+    note: '准确率最高，专有名词与中英混说表现最好。实测 6.4 倍实时，3 小时素材约 27 分钟跑完。',
+  },
+  {
+    key: 'turbo',
+    dir: '',
+    tag: '均衡',
+    size: '1.6 GB',
+    speed: 10,
+    accuracy: 97,
+    vram: '6 - 8 GB',
+    good: '中文课程、访谈、日常录音，显存紧张的机器',
+    note: '准确度接近 large-v3，速度约为它的 1.5 倍，显存占用只有一半。',
+  },
+  {
+    key: 'medium',
+    dir: '',
+    tag: '推荐',
+    size: '1.5 GB',
+    speed: 7,
+    accuracy: 88,
+    vram: '5 - 7 GB',
+    good: '普通话录音的通用选择，清晰人声',
+    note: '速度与准确率的平衡点。清晰的普通话人声（课程、访谈）表现已经很好。',
+  },
+  {
+    key: 'small',
+    dir: '',
+    tag: '最快',
+    size: '500 MB',
+    speed: 16,
+    accuracy: 68,
+    vram: '2 - 3 GB',
+    good: '快速预览、口音较重的短片段',
+    note: '体积最小、速度最快。中文准确率一般，适合先试手或听个大概。',
+  },
+];
+
 const STAGE_DEFS = [
   { key: 'decode',  n: '01 解码', t: '音频提取' },
   { key: 'asr',     n: '02 识别', t: '语音转写' },
@@ -198,8 +254,8 @@ function viewSettings() {
       <div>
         <div class="h1">${ok ? '本地推理环境就绪' : '未检测到 NVIDIA 显卡'}</div>
         <div class="h2">${ok
-          ? `显存 <b>${gpu.used} / ${gpu.total} GB</b>，剩余 <b>${gpu.free} GB</b>。large-v3 需要约 12 GB，如果剩余不足请先关闭其他占用 GPU 的程序，否则转写进程会在加载模型时静默退出。`
-          : '将自动降级到 CPU 推理，速度约为 GPU 的十分之一。'}</div>
+          ? `显存已用 <b>${gpu.used.toFixed(1)} GB</b>，总计 <b>${gpu.total.toFixed(1)} GB</b>，剩余 <b>${gpu.free.toFixed(1)} GB</b>。当前模型需要约 ${gpu.needGiB} GB，剩余不足时请先关闭其他占用 GPU 的程序 —— 否则转写进程会在加载模型阶段静默退出（不报错）。`
+          : '未检测到 NVIDIA 显卡，将自动降级到 CPU 推理，速度约为 GPU 的十分之一。'}</div>
       </div>
     </div>
     <div class="chk">
@@ -207,7 +263,9 @@ function viewSettings() {
       <div class="chk-r"><span class="k">模型目录</span><span class="v">${esc(S.paths?.modelDir || '—')}</span><span class="s ${S.paths?.modelReady ? 'ok' : 'bad'}">${S.paths?.modelReady ? '模型就位' : '未找到模型'}</span></div>
       <div class="chk-r"><span class="k">后端程序</span><span class="v">${esc(S.paths?.backendExe || '—')}</span><span class="s ok">就绪</span></div>
       <div class="chk-r"><span class="k">当前设备</span><span class="v">${S.device}</span><span class="s ok">${S.device === 'cuda' ? 'GPU 推理' : 'CPU 推理'}</span></div>
+      <div class="chk-r"><span class="k">输出目录</span><span class="v">${esc(S.outDir || S.paths?.outputDir || '—')}</span><span class="s ok">可写</span></div>
       <div class="chk-r"><span class="k">网络请求</span><span class="v">全程无</span><span class="s ok">离线</span></div>
+      <div class="chk-r"><span class="k">应用版本</span><span class="v">${esc(S.paths?.version || '—')}</span><span class="s ok">就绪</span></div>
     </div>
     <div class="logbox"><pre id="logPre">${esc(logText || '（暂无日志）')}</pre></div>`;
 }
@@ -226,10 +284,10 @@ function renderResult() {
 
 function bindResultActions() {
   const openDir = $('btnOpenDir');
-  if (openDir) openDir.onclick = () => window.api.openDir(S.outDir || S.paths?.outputs);
+  if (openDir) openDir.onclick = () => window.api.openDir(S.outDir || S.paths?.outputDir);
   const copyPath = $('btnCopyPath');
   if (copyPath) copyPath.onclick = async () => {
-    const p = S.outDir || S.paths?.outputs || '';
+    const p = S.outDir || S.paths?.outputDir || '';
     try { await navigator.clipboard.writeText(p); copyPath.textContent = '已复制'; }
     catch (_) { copyPath.textContent = '复制失败'; }
     setTimeout(() => { copyPath.textContent = '复制路径'; }, 1400);
@@ -267,6 +325,55 @@ function drawWave() {
   }
   box.innerHTML = '';
   box.appendChild(svg);
+}
+
+/** 渲染模型选择卡片：名称、擅长、速度、准确率、显存占用 */
+function renderModelCards() {
+  const box = $('mgrid');
+  if (!box) return;
+  const maxSpeed = Math.max(...MODELS.map((m) => m.speed));
+  box.innerHTML = MODELS.map((m) => `
+    <div class="mcard${m.key === S.modelName ? ' sel' : ''}" data-dir="${m.dir}" data-key="${m.key}">
+      <div class="mname">
+        <span class="mt">${esc(m.key)}</span>
+        <span class="mv">faster-whisper</span>
+      </div>
+      <span class="mtag">${esc(m.tag)}</span>
+      <div class="mrow">
+        <span class="mk">擅长</span>
+        <span class="mv2">${esc(m.good)}</span>
+      </div>
+      <div class="mrow">
+        <span class="mk">速度</span>
+        <span class="mv2">约 ${m.speed} 倍实时（单卡 16GB 实测）
+          <span class="mbar"><i class="dim" style="width:${(m.speed / maxSpeed * 100).toFixed(0)}%"></i></span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mk">准确率</span>
+        <span class="mv2">相对水平 ${m.accuracy}%
+          <span class="mbar"><i style="width:${m.accuracy}%"></i></span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mk">显存</span>
+        <span class="mv2">${esc(m.vram)}</span>
+      </div>
+      <div class="mfoot">
+        <span class="msize">${esc(m.size)}</span>
+        <span class="msize">${m.dir ? '已就位' : '需下载'}</span>
+      </div>
+      <div class="mnote">${esc(m.note)}</div>
+    </div>`).join('');
+}
+
+/** 更新输出目录显示（只显示末两段，完整路径放 title 里） */
+function updateOutPathLabel() {
+  const el = $('outPath');
+  if (!el) return;
+  const dir = S.outDir || S.paths?.outputDir || '';
+  el.textContent = dir || '默认输出目录';
+  el.title = dir;
 }
 
 function fmtTime(sec) {
@@ -397,8 +504,8 @@ async function run() {
   cur.msg = '完成';
   renderQueue();
 
-  // 读取输出文件填充视图
-  await loadOutputs(cur);
+  // 读取输出文件填充视图（用后端实际写出的文件清单）
+  await loadOutputs(cur, S.exports);
 
   resetStages({ decode: 'done', asr: 'done', summary: 'done', trans: 'done', export: 'done' });
   S.stages[0].s = '16kHz 单声道';
@@ -426,8 +533,14 @@ function onProgress(obj) {
     if (cur) { cur.pct = obj.pct ?? 0; cur.msg = Math.round(obj.pct || 0) + '%'; }
     $('stProgress').innerHTML = `已转写 <b>${Math.round(obj.pct || 0)}%</b> · ${obj.count ?? S.segments.length} 段`;
     if (obj.speed) $('stSpeed').textContent = obj.speed.toFixed(1) + 'x 实时';
-    // 高频刷新会卡渲染，每 6 段刷一次足够流畅
-    if ((obj.count ?? 0) % 6 === 0 && S.tab === 'transcript') renderResult();
+    // 按时间节流刷新：每 200ms 最多刷一次。
+    // 按段数节流（每 N 段）不行 —— 段落来得快时界面会明显卡顿，
+    // 慢素材又长时间不刷新，用户会以为程序没动。
+    const now = Date.now();
+    if (S.tab === 'transcript' && now - (S.lastPaint || 0) > 200) {
+      S.lastPaint = now;
+      renderResult();
+    }
     renderQueue();
   } else if (ev === 'summary') {
     S.summary = obj.data || null;
@@ -436,6 +549,7 @@ function onProgress(obj) {
     S.bilingual = obj.data || [];
     if (S.tab === 'bilingual') renderResult();
   } else if (ev === 'exports') {
+    // 后端报的是它实际写出的文件（含完整路径），直接存下来给 loadOutputs 用
     S.exports = obj.data || [];
     if (S.tab === 'export') renderResult();
   } else if (ev === 'done') {
@@ -443,45 +557,92 @@ function onProgress(obj) {
   }
 }
 
-/** 读取输出目录里的实际文件 */
-async function loadOutputs(fileItem) {
-  const dir = S.outDir || S.paths?.outputs;
+/** 文件用途说明（按扩展名匹配） */
+const FILE_DESC = {
+  '.srt': '标准字幕，播放器可直接挂载',
+  '.English.srt': '中英对照，时间轴对齐',
+  '.vtt': 'WebVTT，网页播放器用',
+  '.txt': '纯文本，便于检索与二次编辑',
+  '.json': '结构化数据，含词级时间戳',
+  '.summary.md': '中文纪要：概要 / 要点 / 待办',
+  '.md': '中文纪要：概要 / 要点 / 待办',
+};
+
+/** 根据文件名推断用途 */
+function describeFile(name) {
+  if (name.endsWith('.English.srt')) return FILE_DESC['.English.srt'];
+  if (name.endsWith('.summary.md')) return FILE_DESC['.summary.md'];
+  const dot = name.lastIndexOf('.');
+  const ext = dot >= 0 ? name.slice(dot) : '';
+  return FILE_DESC[ext] || '输出文件';
+}
+
+/**
+ * 读取输出文件。
+ *
+ * 优先用后端 exports 事件里报的完整路径 —— 那是后端实际写出来的文件，
+ * 不需要这边再按文件名规则推一遍（推错一次就是「转写完了但界面没结果」）。
+ * 后端没报时（比如开发态直接调 API）再退回按规则拼路径。
+ */
+async function loadOutputs(fileItem, reported) {
+  const dir = S.outDir || S.paths?.outputDir;
   if (!dir) return;
-  // 输出文件名基于输入文件名，这里按约定规则拼
+
   const base = fileItem.name.replace(/\.[^.]+$/, '');
-  const specs = [
-    { ext: '.srt', desc: '标准字幕，播放器可直接挂载' },
-    { ext: '.English.srt', desc: '中英对照，时间轴对齐' },
-    { ext: '.vtt', desc: 'WebVTT，网页播放器用' },
-    { ext: '.txt', desc: '纯文本，便于检索与二次编辑' },
-    { ext: '.json', desc: '结构化数据，含词级时间戳' },
-    { ext: '.summary.md', desc: '中文纪要：概要 / 要点 / 待办' },
-  ];
-  for (const sp of specs) {
-    const full = `${dir}\\${base}${sp.ext}`;
-    const st = await window.api.fs.statSync(full);
-    if (st && st.ok) {
-      S.exports.push({ name: base + sp.ext, desc: sp.desc, size: fmtSize(st.size), path: full });
+
+  // 清单：优先用后端报的
+  let files = [];
+  if (reported && reported.length) {
+    files = reported.map((f) => ({
+      name: f.name,
+      path: f.path,
+      size: fmtSize(f.size),
+      desc: describeFile(f.name),
+    }));
+  } else {
+    const specs = ['.srt', '.English.srt', '.vtt', '.txt', '.json', '.summary.md'];
+    for (const ext of specs) {
+      const full = `${dir}\\${base}${ext}`;
+      const st = await window.api.fs.statSync(full);
+      if (st && st.ok) {
+        files.push({
+          name: base + ext,
+          path: full,
+          size: fmtSize(st.size),
+          desc: describeFile(base + ext),
+        });
+      }
     }
   }
-  // 解析 JSON 里的段落
-  const jr = await window.api.fs.readFile(`${dir}\\${base}.json`);
-  if (jr && jr.ok) {
-    try {
-      const data = JSON.parse(jr.data);
-      if (Array.isArray(data.segments) && data.segments.length) {
-        S.segments = data.segments.map((s) => ({
-          start: s.start, end: s.end, text: s.text,
-        }));
-      }
-    } catch (_) { /* 解析失败保持已有段落 */ }
+  S.exports = files;
+
+  // 逐个读需要解析内容的文件
+  const jsonFile = files.find((f) => f.name.endsWith('.json'));
+  if (jsonFile) {
+    const jr = await window.api.fs.readFile(jsonFile.path);
+    if (jr && jr.ok) {
+      try {
+        const data = JSON.parse(jr.data);
+        if (Array.isArray(data.segments) && data.segments.length) {
+          S.segments = data.segments.map((s) => ({
+            start: s.start, end: s.end, text: s.text,
+          }));
+        }
+      } catch (_) { /* 解析失败保持已有段落 */ }
+    }
   }
-  // 解析双语字幕
-  const br = await window.api.fs.readFile(`${dir}\\${base}.English.srt`);
-  if (br && br.ok) S.bilingual = parseSrtBilingual(br.data);
-  // 解析纪要
-  const sr = await window.api.fs.readFile(`${dir}\\${base}.summary.md`);
-  if (sr && sr.ok) S.summary = parseSummary(sr.data);
+
+  const biFile = files.find((f) => f.name.endsWith('.English.srt'));
+  if (biFile) {
+    const br = await window.api.fs.readFile(biFile.path);
+    if (br && br.ok) S.bilingual = parseSrtBilingual(br.data);
+  }
+
+  const sumFile = files.find((f) => f.name.endsWith('.summary.md'));
+  if (sumFile) {
+    const sr = await window.api.fs.readFile(sumFile.path);
+    if (sr && sr.ok) S.summary = parseSummary(sr.data);
+  }
 }
 
 /** 解析 SRT（双语：奇数行中文、偶数行英文） */
@@ -597,15 +758,26 @@ function init() {
     S.words = this.classList.contains('on');
   };
 
-  // 模型选择
+  // 模型选择：渲染带详细参数的卡片
+  renderModelCards();
   $('modelBtn').onclick = () => $('modal').classList.add('show');
   $('mCancel').onclick = () => $('modal').classList.remove('show');
   $('mOk').onclick = () => {
     const sel = document.querySelector('.mcard.sel');
     if (sel) {
-      S.modelName = sel.querySelector('.mt').textContent;
+      S.modelName = sel.dataset.key;
+      // 只有已就位的模型才能直接用；未下载的模型沿用当前模型目录并提示先下载
       S.modelDir = sel.dataset.dir || S.paths?.modelDir || '';
+      if (!sel.dataset.dir) {
+        S.logs.push(`模型 ${S.modelName} 尚未下载，请先下载后使用`);
+        S.tab = 'settings';
+        syncTabs();
+        renderResult();
+      }
       $('modelBtn').innerHTML = `${S.modelName} <span class="car">▼</span>`;
+      // 显存需求随模型变化
+      const spec = MODELS.find((m) => m.key === S.modelName);
+      if (spec && S.gpu) S.gpu.needGiB = parseFloat(spec.vram) || 12;
     }
     $('modal').classList.remove('show');
   };
@@ -615,6 +787,14 @@ function init() {
     document.querySelectorAll('.mcard').forEach((c) => c.classList.remove('sel'));
     card.classList.add('sel');
   });
+
+  // 输出目录选择
+  $('btnPickOut').onclick = async () => {
+    const dir = await window.api.openDir();
+    if (!dir) return;
+    S.outDir = dir;
+    updateOutPathLabel();
+  };
 
   // 运行 / 取消
   $('btnRun').onclick = async () => {
@@ -651,16 +831,19 @@ function init() {
     $('stModel').textContent = p.modelReady
       ? 'large-v3 · ' + p.modelDir.split(/[\\/]/).pop()
       : '模型未就位';
-    $('stOut').textContent = '输出 ' + (p.outputs || '');
-    $('titleMeta').textContent = p.isPackaged ? '本地推理 · 无网络请求' : '开发模式 · 本地推理';
+    $('stOut').textContent = '输出 ' + (p.outputDir || '');
+    updateOutPathLabel();
   });
 
   window.api.gpu().then((g) => {
     S.gpu = g;
     if (g.ok) {
+      // 当前模型的显存需求（供设置页提示用）
+      const spec = MODELS.find((m) => m.key === S.modelName) || MODELS[0];
+      g.needGiB = parseFloat(spec.vram) || 12;
       $('gpuLed').className = 'led' + (g.ratio > 0.85 ? ' bad' : '');
       $('gpuText').textContent = g.ratio > 0.85 ? '显存不足' : 'CUDA 就绪';
-      $('stVram').textContent = `显存 ${g.used} / ${g.total} GB`;
+      $('stVram').textContent = `显存 ${g.used.toFixed(1)} / ${g.total.toFixed(1)} GB`;
     } else {
       $('gpuLed').className = 'led wait';
       $('gpuText').textContent = 'CPU 模式';

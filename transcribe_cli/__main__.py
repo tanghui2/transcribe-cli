@@ -63,6 +63,15 @@ def _emit(payload: dict) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows 控制台默认 GBK，打包成 exe 后中文输出会乱码。
+    # 这里强制 UTF-8，GUI 端按 UTF-8 解码即可。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            # 已被重定向或不支持 reconfigure 时忽略
+            pass
+
     args = build_parser().parse_args(argv)
 
     # 必须在 import faster_whisper 之前注入 CUDA DLL 路径
@@ -196,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"输出：\n  {srt_path}\n  {vtt_path}\n  {txt_path}\n  {json_path}")
 
     # 摘要
+    summary_path = None
     if args.summarize:
         print("-" * 50)
         print("生成纪要（本地 Ollama）…")
@@ -248,11 +258,25 @@ def main(argv: list[str] | None = None) -> int:
         produced = []
         for p in (srt_path, vtt_path, txt_path, json_path):
             try:
-                produced.append({"name": p.name, "size": p.stat().st_size})
+                produced.append({
+                    "name": p.name,
+                    "path": str(p),
+                    "size": p.stat().st_size,
+                })
+            except OSError:
+                pass
+        # 纪要文件也一并报上去，GUI 直接照单读取，不用自己猜文件名
+        if summary_path is not None and summary_path.exists():
+            try:
+                produced.append({
+                    "name": summary_path.name,
+                    "path": str(summary_path),
+                    "size": summary_path.stat().st_size,
+                })
             except OSError:
                 pass
         _emit({"event": "stage", "stage": "export", "state": "done", "detail": f"{len(produced)} 个文件"})
-        _emit({"event": "exports", "data": produced})
+        _emit({"event": "exports", "data": produced, "stem": stem, "outDir": str(out_dir)})
 
     return 0
 

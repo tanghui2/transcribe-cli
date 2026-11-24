@@ -50,6 +50,12 @@ desktop/_*.png
 # 临时测试产物
 _evout/
 _exeev/
+
+# 临时构建目录（并行打包用，TRANSCRIBE_DIST_DIR / TRANSCRIBE_BUILD_DIR 指定）
+dist_new/
+dist_v2/
+build_new/
+build_v2/
 _t2/
 _ev.wav
 _packev/
