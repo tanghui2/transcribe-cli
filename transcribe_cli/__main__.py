@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--words", action="store_true", help="输出词级时间戳")
     p.add_argument("--prompt", default=None, help="初始提示词（引导专有名词识别）")
     p.add_argument("--summarize", action="store_true", help="生成中文纪要")
+    p.add_argument("--proofread", action="store_true", help="自动校对转写文本的错别字与专有名词")
     p.add_argument("--translate", default=None, metavar="LANG", help="翻译到指定语言，如 English")
     p.add_argument(
         "--bilingual-srt",
@@ -204,6 +205,70 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"输出：\n  {srt_path}\n  {vtt_path}\n  {txt_path}\n  {json_path}")
 
+    # 自动校对
+    # 放在摘要之前：摘要基于修正后的文本，质量更高。
+    proofread_path = None
+    proofread_diff_path = None
+    proofread_result = None
+    if args.proofread:
+        print("-" * 50)
+        print("自动校对（本地 Ollama）…")
+        if args.events:
+            _emit({"event": "stage", "stage": "proofread", "state": "now", "detail": "qwen3:8b · 本地"})
+
+        from . import proofread as pr
+
+        def _pr_progress(done: int, total: int) -> None:
+            if args.events:
+                _emit({
+                    "event": "stage",
+                    "stage": "proofread",
+                    "state": "now",
+                    "detail": f"{done}/{total} 块",
+                })
+
+        proofread_result = pr.proofread(
+            transcript.segments,
+            on_progress=_pr_progress if args.events else None,
+        )
+
+        if proofread_result.skipped:
+            print("  跳过：Ollama 不可用")
+            if args.events:
+                _emit({"event": "stage", "stage": "proofread", "state": "err", "detail": "Ollama 不可用"})
+        else:
+            changed = proofread_result.changed_count
+            print(f"  检查 {proofread_result.scanned} 段，发现 {changed} 处需修正")
+            if proofread_result.failed_blocks:
+                print(f"  （{proofread_result.failed_blocks} 块调用失败，已跳过）")
+
+            corrected = pr.apply_corrections(transcript.segments, proofread_result.changes)
+            proofread_path = out_dir / f"{stem}.corrected.srt"
+            pr.write_corrected_srt(corrected, proofread_path)
+            (out_dir / f"{stem}.corrected.txt").write_text(
+                "".join(s.text for s in corrected), encoding="utf-8"
+            )
+            proofread_diff_path = out_dir / f"{stem}.proofread.json"
+            proofread_diff_path.write_text(
+                json.dumps(proofread_result.to_dict(), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(f"  {proofread_path}")
+            print(f"  {proofread_diff_path}")
+
+            if args.events:
+                _emit({
+                    "event": "stage",
+                    "stage": "proofread",
+                    "state": "done",
+                    "detail": f"{changed} 处修正",
+                })
+                _emit({"event": "proofread", "data": proofread_result.to_dict()})
+
+            # 用修正后的段落继续做摘要与翻译
+            from dataclasses import replace as _dc_replace
+            transcript = _dc_replace(transcript, segments=corrected)
+
     # 摘要
     summary_path = None
     if args.summarize:
@@ -275,6 +340,17 @@ def main(argv: list[str] | None = None) -> int:
                 })
             except OSError:
                 pass
+        # 校对产物同理
+        for extra in (proofread_path, proofread_diff_path):
+            if extra is not None and extra.exists():
+                try:
+                    produced.append({
+                        "name": extra.name,
+                        "path": str(extra),
+                        "size": extra.stat().st_size,
+                    })
+                except OSError:
+                    pass
         _emit({"event": "stage", "stage": "export", "state": "done", "detail": f"{len(produced)} 个文件"})
         _emit({"event": "exports", "data": produced, "stem": stem, "outDir": str(out_dir)})
 
@@ -285,11 +361,16 @@ def parse_summary(raw: str) -> dict:
     """把纪要 markdown 解析成结构化数据，供 GUI 渲染。
 
     格式：【概要】/【要点】/【待办】三段。
+    模型实际输出的是 markdown 标题形式（'### 【概要】'），
+    所以要先剥掉 '#' 前缀再判断段落，否则整篇解析为空。
     """
     result = {"overview": "", "points": [], "todos": ""}
     current = None
     for line in raw.splitlines():
-        text = line.strip()
+        # 剥掉 markdown 标题前缀与分隔线
+        text = line.strip().lstrip("#").strip()
+        if not text or text in {"---", "***", "___"}:
+            continue
         if text.startswith("【概要】"):
             current = "overview"
             continue
@@ -298,8 +379,6 @@ def parse_summary(raw: str) -> dict:
             continue
         if text.startswith("【待办】"):
             current = "todos"
-            continue
-        if not text:
             continue
         if current == "overview":
             result["overview"] += text

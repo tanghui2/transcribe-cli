@@ -207,6 +207,7 @@ ipcMain.handle('transcribe:run', async (event, payload) => {
     language = 'zh',
     modelDir = '',
     summarize = false,
+    proofread = false,
     translate = '',
     bilingualSrt = false,
     outDir = '',
@@ -232,6 +233,7 @@ ipcMain.handle('transcribe:run', async (event, payload) => {
   if (words) args.push('--words');
   if (prompt) args.push('--prompt', prompt);
   if (summarize) args.push('--summarize');
+  if (proofread) args.push('--proofread');
   if (translate) args.push('--translate', translate);
   if (bilingualSrt) args.push('--bilingual-srt');
   // 输出目录始终显式传入，避免 CLI 落到它自己的默认相对路径

@@ -9,7 +9,7 @@ const S = {
   tab: 'transcript',
   language: 'zh',
   device: 'cuda',
-  outputs: { srt: true, txt: true, vtt: false, json: false, summary: false },
+  outputs: { srt: true, txt: true, vtt: false, json: false, summary: false, proofread: false },
   vad: true,
   words: false,
   modelDir: '',
@@ -18,6 +18,7 @@ const S = {
   paths: null,
   segments: [],         // 转写段落
   bilingual: [],        // 双语对照
+  proofread: null,     // 校对结果 { scanned, changedCount, changes: [...] }
   summary: null,        // { overview, points, todos }
   exports: [],          // 导出文件清单
   logs: [],
@@ -83,9 +84,10 @@ const MODELS = [
 const STAGE_DEFS = [
   { key: 'decode',  n: '01 解码', t: '音频提取' },
   { key: 'asr',     n: '02 识别', t: '语音转写' },
-  { key: 'summary', n: '03 纪要', t: '要点提炼' },
-  { key: 'trans',   n: '04 翻译', t: '逐段对齐' },
-  { key: 'export',  n: '05 导出', t: '写入文件' },
+  { key: 'proofread', n: '03 校对', t: '错字修正' },
+  { key: 'summary', n: '04 纪要', t: '要点提炼' },
+  { key: 'trans',   n: '05 翻译', t: '逐段对齐' },
+  { key: 'export',  n: '06 导出', t: '写入文件' },
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -184,6 +186,42 @@ function viewTranscript() {
     <div style="flex:1;overflow:auto;padding:14px 20px 20px">${rows}</div></div>`;
 }
 
+function viewProofread() {
+  const pr = S.proofread;
+  if (!pr) {
+    return `<div class="empty"><div class="ei">◌</div><div class="et">还没有校对结果</div>
+      <div class="et" style="font-size:13px">勾选「校对」输出并开始转写，会自动修正错别字与专有名词</div></div>`;
+  }
+  if (pr.skipped) {
+    return `<div class="empty"><div class="ei">◌</div><div class="et">校对已跳过</div>
+      <div class="et" style="font-size:13px">本地 Ollama 不可用 —— 校对依赖本地模型推理</div></div>`;
+  }
+
+  const head = `
+    <div class="pr-head">
+      <div class="pr-stat"><b>${pr.changedCount}</b><span>处修正</span></div>
+      <div class="pr-stat"><b>${pr.scanned}</b><span>段已检查</span></div>
+      <div class="pr-stat"><b>${pr.blocks}</b><span>个校对块</span></div>
+      ${pr.failedBlocks ? `<div class="pr-stat bad"><b>${pr.failedBlocks}</b><span>块失败</span></div>` : ''}
+    </div>`;
+
+  if (!pr.changedCount) {
+    return head + `<div class="empty"><div class="ei">✓</div><div class="et">没有发现错别字</div>
+      <div class="et" style="font-size:13px">${pr.scanned} 段文本均未发现同音误识别或专有名词错误</div></div>`;
+  }
+
+  const rows = pr.changes.map((c, i) => `
+    <div class="pr-item">
+      <div class="pr-no">${i + 1}</div>
+      <div class="pr-body">
+        <div class="pr-before"><span class="pr-tag">原文</span>${esc(c.original)}</div>
+        <div class="pr-after"><span class="pr-tag">改后</span>${esc(c.corrected)}</div>
+      </div>
+    </div>`).join('');
+
+  return head + `<div class="pr-list">${rows}</div>`;
+}
+
 function viewSummary() {
   if (!S.summary) {
     return `<div class="empty"><div class="ei">◌</div><div class="et">还没有生成纪要</div>
@@ -273,6 +311,7 @@ function viewSettings() {
 function renderResult() {
   const box = $('result');
   if (S.tab === 'transcript') box.innerHTML = viewTranscript();
+  else if (S.tab === 'proofread') box.innerHTML = viewProofread();
   else if (S.tab === 'summary') box.innerHTML = viewSummary();
   else if (S.tab === 'bilingual') box.innerHTML = viewBilingual();
   else if (S.tab === 'export') box.innerHTML = viewExport();
@@ -441,6 +480,7 @@ async function run() {
   S.segments = [];
   S.bilingual = [];
   S.summary = null;
+  S.proofread = null;
   S.exports = [];
 
   const cur = S.files[0];
@@ -459,6 +499,7 @@ async function run() {
     language: S.language,
     modelDir: S.modelDir || S.paths?.modelDir || '',
     summarize: S.outputs.summary,
+    proofread: S.outputs.proofread,
     translate: S.outputs.summary ? 'English' : '',
     bilingualSrt: S.outputs.summary,
     outDir: S.outDir,
@@ -507,12 +548,18 @@ async function run() {
   // 读取输出文件填充视图（用后端实际写出的文件清单）
   await loadOutputs(cur, S.exports);
 
-  resetStages({ decode: 'done', asr: 'done', summary: 'done', trans: 'done', export: 'done' });
+  resetStages({
+    decode: 'done', asr: 'done', proofread: 'done',
+    summary: 'done', trans: 'done', export: 'done',
+  });
   S.stages[0].s = '16kHz 单声道';
   S.stages[1].s = S.segments.length + ' 段';
-  S.stages[2].s = S.summary ? '已生成' : '未启用';
-  S.stages[3].s = S.bilingual.length ? '已对齐' : '未启用';
-  S.stages[4].s = S.exports.length + ' 个文件';
+  S.stages[2].s = S.proofread
+    ? (S.proofread.changedCount ? S.proofread.changedCount + ' 处修正' : '无须修正')
+    : '未启用';
+  S.stages[3].s = S.summary ? '已生成' : '未启用';
+  S.stages[4].s = S.bilingual.length ? '已对齐' : '未启用';
+  S.stages[5].s = S.exports.length + ' 个文件';
   renderStages();
 
   $('stProgress').textContent = '完成';
@@ -548,6 +595,9 @@ function onProgress(obj) {
   } else if (ev === 'bilingual') {
     S.bilingual = obj.data || [];
     if (S.tab === 'bilingual') renderResult();
+  } else if (ev === 'proofread') {
+    S.proofread = obj.data || null;
+    if (S.tab === 'proofread') renderResult();
   } else if (ev === 'exports') {
     // 后端报的是它实际写出的文件（含完整路径），直接存下来给 loadOutputs 用
     S.exports = obj.data || [];
@@ -566,12 +616,18 @@ const FILE_DESC = {
   '.json': '结构化数据，含词级时间戳',
   '.summary.md': '中文纪要：概要 / 要点 / 待办',
   '.md': '中文纪要：概要 / 要点 / 待办',
+  '.corrected.srt': '校对后字幕，错字已修正',
+  '.corrected.txt': '校对后纯文本',
+  '.proofread.json': '校对改动清单',
 };
 
 /** 根据文件名推断用途 */
 function describeFile(name) {
   if (name.endsWith('.English.srt')) return FILE_DESC['.English.srt'];
   if (name.endsWith('.summary.md')) return FILE_DESC['.summary.md'];
+  if (name.endsWith('.corrected.srt')) return FILE_DESC['.corrected.srt'];
+  if (name.endsWith('.corrected.txt')) return FILE_DESC['.corrected.txt'];
+  if (name.endsWith('.proofread.json')) return FILE_DESC['.proofread.json'];
   const dot = name.lastIndexOf('.');
   const ext = dot >= 0 ? name.slice(dot) : '';
   return FILE_DESC[ext] || '输出文件';
@@ -600,7 +656,8 @@ async function loadOutputs(fileItem, reported) {
       desc: describeFile(f.name),
     }));
   } else {
-    const specs = ['.srt', '.English.srt', '.vtt', '.txt', '.json', '.summary.md'];
+    const specs = ['.srt', '.English.srt', '.vtt', '.txt', '.json', '.summary.md',
+                   '.corrected.srt', '.corrected.txt', '.proofread.json'];
     for (const ext of specs) {
       const full = `${dir}\\${base}${ext}`;
       const st = await window.api.fs.statSync(full);
@@ -643,6 +700,17 @@ async function loadOutputs(fileItem, reported) {
     const sr = await window.api.fs.readFile(sumFile.path);
     if (sr && sr.ok) S.summary = parseSummary(sr.data);
   }
+
+  // 校对结果：后端写的 .proofread.json 里有完整的改动清单
+  const prFile = files.find((f) => f.name.endsWith('.proofread.json'));
+  if (prFile) {
+    const prr = await window.api.fs.readFile(prFile.path);
+    if (prr && prr.ok) {
+      try {
+        S.proofread = JSON.parse(prr.data);
+      } catch (_) { /* 解析失败保持已有结果 */ }
+    }
+  }
 }
 
 /** 解析 SRT（双语：奇数行中文、偶数行英文） */
@@ -671,18 +739,23 @@ function parseSummary(raw) {
   const res = { overview: '', points: [], todos: '' };
   let cur = null;
   for (const line of lines) {
-    const t = line.trim();
+    // 模型输出的实际格式是 markdown 标题：'### 【概要】'
+    // 直接 startsWith('【概要】') 匹配不上，导致整篇解析为空。
+    // 这里先剥掉 markdown 标题前缀（# 与空格），再判断是哪一段。
+    const t = line.trim().replace(/^#{1,6}\s*/, '').trim();
     if (t.startsWith('【概要】')) { cur = 'overview'; continue; }
     if (t.startsWith('【要点】')) { cur = 'points'; continue; }
     if (t.startsWith('【待办】')) { cur = 'todos'; continue; }
     if (!t) continue;
+    // 分隔线（---）不是内容
+    if (/^[-*_]{3,}$/.test(t)) continue;
     if (cur === 'overview') res.overview += t;
     else if (cur === 'points') res.points.push(t.replace(/^\d+[.、]\s*/, ''));
     else if (cur === 'todos') res.todos += t;
   }
   res.overview = res.overview.trim();
   res.todos = res.todos.trim();
-  return res.points.length ? res : null;
+  return res.points.length || res.overview ? res : null;
 }
 
 // ---------------------------------------------------------------- 事件绑定
@@ -790,7 +863,7 @@ function init() {
 
   // 输出目录选择
   $('btnPickOut').onclick = async () => {
-    const dir = await window.api.openDir();
+    const dir = await window.api.pickDir();
     if (!dir) return;
     S.outDir = dir;
     updateOutPathLabel();
@@ -876,6 +949,7 @@ window.__injectDemo = function (data) {
   }
   if (data.bilingualRaw) S.bilingual = parseSrtBilingual(data.bilingualRaw);
   if (data.summaryRaw) S.summary = parseSummary(data.summaryRaw);
+  if (data.proofread) S.proofread = data.proofread;
   if (data.exports) S.exports = data.exports;
   if (data.tab) S.tab = data.tab;
   syncTabs();

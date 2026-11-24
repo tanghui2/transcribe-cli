@@ -9,7 +9,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // ---- 文件选择 ----
   openFiles: () => ipcRenderer.invoke('dialog:openFiles'),
-  openDir: () => ipcRenderer.invoke('dialog:openDir'),
+  // 注意：选目录叫 pickDir。早期版本这里叫 openDir，
+  // 和下面「用系统默认程序打开目录」的 openDir 重名 —— 后者覆盖了前者，
+  // 结果点「更改」不弹出选择框，而是去打开目录。
+  pickDir: () => ipcRenderer.invoke('dialog:openDir'),
 
   // ---- 转写任务 ----
   run: (payload) => ipcRenderer.invoke('transcribe:run', payload),
